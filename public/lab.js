@@ -414,6 +414,228 @@ let pollen;
   scene.add(ground);
 }
 
+// ============================================================
+// LAYER 2 — MID-DISTANCE TREES
+// Individually painted trees on transparent billboards, standing in real
+// 3D space (z −40 … −11). Three depth tiers inside the layer: far trees
+// lighter/softer, near trees darker with stronger silhouettes. The center
+// stays open — trees frame the future clearing from the sides.
+// ============================================================
+
+const cssCol = (c) => '#' + c.getHexString();
+
+function paintTree(tier) { // 0 = far, 1 = middle, 2 = nearer
+  const W = 680, H = 768;
+  const sharp = makeCanvas(W, H);
+  const g = sharp.getContext('2d');
+
+  const GREENS2 = [0x1e4d33, 0x2f6b46, 0x2e7553, 0x55703c, 0x6f9652, 0x24593c];
+  const hazeMix = [0.32, 0.15, 0.04][tier];
+  const mainGreen = new THREE.Color(pick(GREENS2)).lerp(HAZE, hazeMix);
+  const altGreen = mainGreen.clone().offsetHSL(rand(-0.02, 0.02), rand(-0.06, 0.06), rand(-0.05, 0.05));
+  const dark = mainGreen.clone().lerp(new THREE.Color(0x102b1f), 0.38);
+  const lite = mainGreen.clone().lerp(new THREE.Color(0xd8ecb0), 0.3);
+  const trunkC = new THREE.Color(pick([0x4a3c30, 0x554738, 0x4a443a])).lerp(HAZE, hazeMix * 0.7);
+  const trunkLite = trunkC.clone().lerp(new THREE.Color(0xd8b884), 0.4);
+
+  // ---- trunk: a gently curved, tapering polygon (never a straight pole)
+  const baseX = W / 2 + rand(-24, 24);
+  const baseY = H - 12;
+  const trunkH = H * rand(0.42, 0.56);
+  const leanPx = rand(-60, 60);
+  const ctrlX = baseX + leanPx * rand(0.15, 0.7);
+  const topX = baseX + leanPx;
+  const topY = baseY - trunkH;
+  const w0 = H * rand(0.026, 0.048) * (tier === 2 ? 1.2 : 1);
+  const w1 = w0 * rand(0.32, 0.5);
+  const PT = (t) => [
+    (1 - t) * (1 - t) * baseX + 2 * (1 - t) * t * ctrlX + t * t * topX,
+    (1 - t) * (1 - t) * baseY + 2 * (1 - t) * t * (baseY - trunkH * 0.55) + t * t * topY,
+  ];
+  g.fillStyle = cssCol(trunkC);
+  g.beginPath();
+  const NSEG = 8;
+  for (let i = 0; i <= NSEG; i++) {
+    const t = i / NSEG;
+    const [x, y] = PT(t);
+    const hw = lerp(w0, w1, t) / 2;
+    if (i === 0) g.moveTo(x - hw, y); else g.lineTo(x - hw, y);
+  }
+  for (let i = NSEG; i >= 0; i--) {
+    const t = i / NSEG;
+    const [x, y] = PT(t);
+    g.lineTo(x + lerp(w0, w1, t) / 2, y);
+  }
+  g.closePath();
+  g.fill();
+  // root flare
+  g.beginPath();
+  g.moveTo(baseX - w0 * 1.5, baseY);
+  g.quadraticCurveTo(baseX - w0 * 0.55, baseY - w0 * 0.9, baseX - w0 * 0.4, baseY - w0 * 1.4);
+  g.lineTo(baseX + w0 * 0.4, baseY - w0 * 1.4);
+  g.quadraticCurveTo(baseX + w0 * 0.55, baseY - w0 * 0.9, baseX + w0 * 1.5, baseY);
+  g.closePath();
+  g.fill();
+  // warm light on the sun side of the trunk
+  g.globalCompositeOperation = 'source-atop';
+  g.globalAlpha = 0.4;
+  g.fillStyle = cssCol(trunkLite);
+  for (let i = 0; i < NSEG; i++) {
+    const t = i / NSEG;
+    const [x, y] = PT(t);
+    const hw = lerp(w0, w1, t) / 2;
+    g.fillRect(x + hw * 0.25, y - trunkH / NSEG - 2, hw * 0.55, trunkH / NSEG + 4);
+  }
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+
+  // ---- branches reaching out of the upper trunk; their tips seed foliage
+  const anchors = [[topX, topY]];
+  const branches = randInt(2, 4);
+  const forked = Math.random() < 0.35;
+  for (let b = 0; b < branches + (forked ? 1 : 0); b++) {
+    const t0 = forked && b === 0 ? rand(0.5, 0.65) : rand(0.7, 0.98);
+    const [sx, sy] = PT(t0);
+    const ang = rand(-2.5, -0.6) * (Math.random() < 0.5 ? 1 : -1) * 0.55 - Math.PI / 2 * 0.2;
+    const len = trunkH * rand(0.22, forked && b === 0 ? 0.5 : 0.38);
+    const dir = pick([-1, 1]);
+    const ex = sx + Math.cos(ang) * len * dir;
+    const ey = sy - Math.abs(Math.sin(ang)) * len * rand(0.5, 1);
+    g.strokeStyle = cssCol(trunkC);
+    g.lineCap = 'round';
+    let px = sx, py = sy;
+    for (let s2 = 1; s2 <= 3; s2++) {
+      const tt = s2 / 3;
+      const nx = lerp(sx, ex, tt) + rand(-6, 6);
+      const ny = lerp(sy, ey, tt) + rand(-4, 4);
+      g.lineWidth = lerp(w1 * 0.9, w1 * 0.25, tt);
+      g.beginPath();
+      g.moveTo(px, py);
+      g.lineTo(nx, ny);
+      g.stroke();
+      px = nx; py = ny;
+    }
+    anchors.push([ex, ey]);
+  }
+
+  // ---- canopy: several irregular leaf masses around the anchors
+  const canopyR = H * rand(0.11, 0.16);
+  const wide = Math.random() < 0.5; // wide crown vs tall crown
+  const masses = randInt(5, 8);
+  const leafMass = (cx, cy, r, col) => {
+    g.fillStyle = cssCol(col);
+    for (let b = 0; b < 6; b++) {
+      g.beginPath();
+      g.arc(cx + rand(-r, r) * 0.55, cy + rand(-r * 0.45, r * 0.4), r * rand(0.35, 0.6), 0, TAU);
+      g.fill();
+    }
+    for (let s2 = 0; s2 < 16; s2++) { // leafy ragged edge
+      const a = rand(0, TAU);
+      g.beginPath();
+      g.arc(cx + Math.cos(a) * r * rand(0.65, 1.05), cy + Math.sin(a) * r * rand(0.5, 0.9) * 0.8, r * rand(0.06, 0.14), 0, TAU);
+      g.fill();
+    }
+    g.globalCompositeOperation = 'source-atop';
+    g.globalAlpha = 0.26;
+    g.fillStyle = cssCol(dark);
+    for (let s2 = 0; s2 < 3; s2++) {
+      g.beginPath();
+      g.arc(cx - r * rand(0, 0.4), cy + r * rand(0.05, 0.4), r * rand(0.25, 0.45), 0, TAU);
+      g.fill();
+    }
+    g.fillStyle = cssCol(lite);
+    for (let s2 = 0; s2 < 2; s2++) {
+      g.beginPath();
+      g.arc(cx + r * rand(0.1, 0.4), cy - r * rand(0, 0.35), r * rand(0.22, 0.38), 0, TAU);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  };
+  for (let m = 0; m < masses; m++) {
+    const [ax, ay] = pick(anchors);
+    const spreadX = canopyR * (wide ? rand(0.4, 2.0) : rand(0.3, 1.1));
+    const spreadY = canopyR * (wide ? rand(0.25, 0.9) : rand(0.5, 1.6));
+    leafMass(
+      clamp(ax + rand(-spreadX, spreadX), canopyR * 1.25, W - canopyR * 1.25),
+      clamp(ay - rand(0, spreadY), canopyR * 1.2, H),
+      canopyR * rand(0.7, 1.05),
+      Math.random() < 0.5 ? mainGreen : altGreen);
+  }
+  // small light gaps in the canopy (skip the far tier — too soft to matter)
+  if (tier > 0) {
+    g.globalCompositeOperation = 'destination-out';
+    for (let hole = 0; hole < randInt(2, 4); hole++) {
+      g.globalAlpha = rand(0.5, 0.9);
+      g.beginPath();
+      g.arc(topX + rand(-canopyR * 1.4, canopyR * 1.4), topY - rand(0, canopyR * 1.2), rand(5, 13), 0, TAU);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
+
+  // ---- tiny grass tuft at the base (sometimes)
+  if (Math.random() < 0.6) {
+    g.strokeStyle = cssCol(dark);
+    g.lineWidth = 3;
+    g.lineCap = 'round';
+    for (let s2 = 0; s2 < randInt(4, 9); s2++) {
+      const gx = baseX + rand(-w0 * 2.2, w0 * 2.2);
+      g.beginPath();
+      g.moveTo(gx, baseY + 6);
+      g.quadraticCurveTo(gx + rand(-6, 6), baseY - rand(6, 16), gx + rand(-12, 12), baseY - rand(14, 26));
+      g.stroke();
+    }
+  }
+
+  // far trees melt slightly into the atmosphere
+  if (tier === 0) {
+    const c = makeCanvas(W, H);
+    const out = c.getContext('2d');
+    out.filter = 'blur(1.4px)';
+    out.drawImage(sharp, 0, 0);
+    return c;
+  }
+  return sharp;
+}
+
+const midTrees = [];
+{
+  // organic clusters framing the center; the clearing itself stays open
+  const clusters = [
+    { x: -18, n: randInt(2, 3) }, { x: -12, n: randInt(2, 4) }, { x: -7, n: randInt(1, 2) },
+    { x: 6.5, n: randInt(1, 2) }, { x: 11.5, n: randInt(2, 4) }, { x: 17, n: randInt(2, 3) },
+    { x: rand(-4, 4), n: randInt(1, 2), farOnly: true }, // small distant trees peeking through the middle
+    // guaranteed strong framing trees so no random roll leaves the sides bare
+    { x: -rand(9.5, 13), n: 1, nearOnly: true },
+    { x: rand(9.5, 13), n: 1, nearOnly: true },
+  ];
+  for (const cl of clusters) {
+    for (let i = 0; i < cl.n; i++) {
+      const tier = cl.farOnly ? 0 : cl.nearOnly ? 2 : (Math.random() < 0.35 ? 0 : Math.random() < 0.6 ? 1 : 2);
+      const z = [rand(-40, -28), rand(-26, -18), rand(-16, -11)][tier];
+      const worldH = [rand(6.5, 9), rand(9, 12.5), rand(12, 15.5)][tier];
+      let x = cl.x + rand(-2.4, 2.4);
+      // keep the central stage clear of near/mid trunks
+      const minX = [2.2, 4.5, 7.5][tier];
+      if (Math.abs(x) < minX) x = Math.sign(x || 1) * (minX + rand(0, 1.5));
+      const cv = paintTree(tier);
+      const mat = new THREE.MeshBasicMaterial({
+        map: canvasTex(cv), transparent: true, depthWrite: false, fog: false,
+      });
+      const geo = new THREE.PlaneGeometry(worldH * (680 / 768), worldH);
+      geo.translate(0, worldH / 2, 0); // pivot at the roots
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, 0.02, z);
+      if (Math.random() < 0.5) m.scale.x = -1; // free variation
+      m.userData = { swayAmp: rand(0.004, 0.011), swaySpeed: rand(0.35, 0.7), phase: rand(0, TAU) };
+      midTrees.push(m);
+      scene.add(m);
+    }
+  }
+}
+
 // ---------- loop ----------
 const clock = new THREE.Clock();
 function frame() {
@@ -435,6 +657,11 @@ function frame() {
   for (const cl of clouds) {
     cl.position.x += cl.userData.speed * dt;
     if (cl.position.x > 90) cl.position.x = -90;
+  }
+
+  // mid-distance trees breathe in the breeze
+  for (const tr of midTrees) {
+    tr.rotation.z = Math.sin(t * tr.userData.swaySpeed + tr.userData.phase) * tr.userData.swayAmp;
   }
 
   // pollen floats and twinkles
