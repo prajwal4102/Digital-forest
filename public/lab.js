@@ -97,8 +97,9 @@ const SUN_DIR = new THREE.Vector3(0.42, 0.38, -0.78).normalize(); // clearly up 
         float h = d.y;
         vec3 c = h > 0.3 ? mix(mid, top, smoothstep(0.3, 0.9, h))
                          : mix(hor, mid, smoothstep(-0.05, 0.3, h));
+        c = mix(c, vec3(0.38, 0.485, 0.44), smoothstep(-0.002, -0.16, h)); // cool neutral haze below the horizon
         float s = pow(max(dot(d, sunDir), 0.0), 4.0);
-        c = mix(c, warm, s * 0.5 * smoothstep(-0.05, 0.4, h + 0.15));
+        c = mix(c, warm, s * 0.5 * smoothstep(-0.05, 0.4, h + 0.15) * smoothstep(-0.05, 0.02, h));
         gl_FragColor = vec4(c, 1.0);
       }`,
   });
@@ -261,6 +262,14 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
   glow.addColorStop(1, 'rgba(25,50,34,0.15)');
   out.fillStyle = glow;
   out.fillRect(0, 0, w, h);
+  // fade to transparent toward the canvas bottom - no opaque slab below the horizon
+  out.globalCompositeOperation = 'destination-out';
+  const fade = out.createLinearGradient(0, h * 0.72, 0, h);
+  fade.addColorStop(0, 'rgba(0,0,0,0)');
+  fade.addColorStop(1, 'rgba(0,0,0,1)');
+  out.fillStyle = fade;
+  out.fillRect(0, h * 0.72, w, h * 0.28);
+  out.globalCompositeOperation = 'source-over';
   return c;
 }
 
@@ -325,9 +334,9 @@ const mists = [];
   const mistCv = makeCanvas(512, 128);
   const g = mistCv.getContext('2d');
   const grad = g.createLinearGradient(0, 0, 0, 128);
-  grad.addColorStop(0, 'rgba(232,244,206,0)');
-  grad.addColorStop(0.5, 'rgba(232,244,206,0.85)');
-  grad.addColorStop(1, 'rgba(232,244,206,0)');
+  grad.addColorStop(0, 'rgba(222,236,218,0)');
+  grad.addColorStop(0.5, 'rgba(222,236,218,0.85)');
+  grad.addColorStop(1, 'rgba(222,236,218,0)');
   g.fillStyle = grad;
   g.fillRect(0, 0, 512, 128);
   // soften the strip's ends so it never shows a hard edge
@@ -397,26 +406,7 @@ let pollen;
 }
 
 // ---- placeholder stage floor, melting into the horizon haze ----
-{
-  const geo = new THREE.PlaneGeometry(300, 160, 1, 48);
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(0, 0, -30);
-  const pos = geo.attributes.position;
-  const near = new THREE.Color(0x587e53), far = new THREE.Color(0xcfe4ac);
-  const colors = [];
-  for (let i = 0; i < pos.count; i++) {
-    const z = pos.getZ(i);
-    const t = clamp((10 - z) / 75, 0, 1); // fades to haze into the distance
-    const c = near.clone().lerp(far, t);
-    colors.push(c.r, c.g, c.b);
-  }
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 1,
-  }));
-  ground.receiveShadow = true;
-  scene.add(ground);
-}
+// (intentionally no ground here — the real terrain arrives as its own layer)
 
 // ============================================================
 // LAYER 2 — MID-DISTANCE TREES (true 3D)
@@ -696,7 +686,6 @@ const midTrees = [];
   const clusters = [
     { x: -18, n: randInt(2, 3) }, { x: -12, n: randInt(2, 4) }, { x: -7, n: randInt(1, 2) },
     { x: 6.5, n: randInt(1, 2) }, { x: 11.5, n: randInt(2, 4) }, { x: 17, n: randInt(2, 3) },
-    { x: rand(-4, 4), n: randInt(1, 2), farOnly: true }, // small distant trees through the middle
     // guaranteed framing trees so no random roll leaves the sides bare
     { x: -rand(9.5, 13), n: 1, nearOnly: true },
     { x: rand(9.5, 13), n: 1, nearOnly: true },
