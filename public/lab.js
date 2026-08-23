@@ -133,16 +133,58 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
   const sharp = makeCanvas(w, h);
   const g = sharp.getContext('2d');
   const base = new THREE.Color(color).lerp(HAZE, haze);
-  const fill = '#' + base.getHexString();
-  g.fillStyle = fill;
+  const lite = base.clone().lerp(new THREE.Color(0xd6ecb8), 0.22); // sun-kissed side (light green, not beige)
+  const dark = base.clone().lerp(new THREE.Color(0x16332a), 0.26); // shaded side
+  const css = (col) => '#' + col.getHexString();
+  g.fillStyle = css(base);
 
-  // organic crown: several overlapping arcs, never a single lollipop circle
+  // natural crown: irregular blob mass, ragged leafy edge, a shaded underside
+  // and sunlight catching the upper-right — texture instead of a flat shape
   const crown = (cx, cy, r) => {
-    for (let b = 0; b < randInt(3, 5); b++) {
+    g.fillStyle = css(base);
+    for (let b = 0; b < 6; b++) {
       g.beginPath();
-      g.arc(cx + rand(-r, r) * 0.55, cy + rand(-r * 0.5, r * 0.35), r * rand(0.45, 0.75), 0, TAU);
+      g.arc(cx + rand(-r, r) * 0.6, cy + rand(-r * 0.5, r * 0.4), r * rand(0.35, 0.6), 0, TAU);
       g.fill();
     }
+    for (let s2 = 0; s2 < 14; s2++) { // ragged leafy edge
+      const a = rand(-Math.PI, 0);
+      g.beginPath();
+      g.arc(cx + Math.cos(a) * r * rand(0.7, 1.08), cy + Math.sin(a) * r * rand(0.5, 0.85), r * rand(0.07, 0.16), 0, TAU);
+      g.fill();
+    }
+    // shading and sunlight are painted ONLY onto existing foliage pixels
+    g.globalCompositeOperation = 'source-atop';
+    g.globalAlpha = 0.3;
+    g.fillStyle = css(dark); // shaded mass, lower left
+    for (let s2 = 0; s2 < 4; s2++) {
+      g.beginPath();
+      g.arc(cx - r * rand(0.05, 0.45), cy + r * rand(0.1, 0.42), r * rand(0.2, 0.38), 0, TAU);
+      g.fill();
+    }
+    g.fillStyle = css(lite); // sunlight on the upper right
+    for (let s2 = 0; s2 < 4; s2++) {
+      g.beginPath();
+      g.arc(cx + r * rand(0.15, 0.5), cy - r * rand(0.05, 0.4), r * rand(0.14, 0.3), 0, TAU);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = css(base);
+  };
+
+  // dappled tonal noise across everything drawn so far — foliage shimmer
+  const dapple = (count, rMin, rMax) => {
+    g.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < count; i++) {
+      g.fillStyle = Math.random() < 0.72 ? css(dark) : css(lite);
+      g.globalAlpha = rand(0.04, 0.1);
+      g.beginPath();
+      g.arc(rand(0, w), rand(0, h), rand(rMin, rMax), 0, TAU);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
   };
 
   if (kind === 'hills') {
@@ -177,6 +219,9 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
       if (tall && Math.random() < 0.7) g.fillRect(x - 3, cy, 6, baseY - cy + 24);
       x += r * rand(0.55, Math.random() < 0.12 ? 2.6 : 1.15); // rare dips of sky
     }
+    // continuous understory hedge so no gaps open below the crowns
+    g.fillStyle = css(base);
+    g.fillRect(0, baseY + 8, w, h - baseY - 8);
   } else { // 'clusters' — clumps of indistinct trees with clear gaps between
     const baseY = h * 0.68;
     let x = rand(0, 160);
@@ -189,12 +234,15 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
         const r = rand(55, 95);
         const cy = baseY - rand(40, 100);
         crown(cx, cy, r);
+        g.fillStyle = css(dark);
         g.fillRect(cx - rand(4, 6), cy + r * 0.2, rand(8, 12), baseY - cy + 18);
         cx += r * rand(0.7, 1.1);
       }
       x = cx + rand(180, 460); // clear gap before the next clump
     }
   }
+
+  dapple(kind === 'hills' ? 1600 : 2200, 3, kind === 'clusters' ? 9 : 13);
 
   // single blur pass, then a faint light kissing the top of the far canopy
   const c = makeCanvas(w, h);
@@ -231,6 +279,41 @@ distanceLayer({ kind: 'hills', blur: 6, color: 0x7aa89b, haze: 0.32 }, -120, 320
 distanceLayer({ kind: 'hills', blur: 5, color: 0x649472, haze: 0.2 }, -100, 270, 26, -3.5);
 distanceLayer({ kind: 'treeline', blur: 3, color: 0x487e58, haze: 0.08 }, -80, 220, 18, -2.5);
 distanceLayer({ kind: 'clusters', blur: 1.5, color: 0x2f6a44, haze: 0 }, -62, 170, 15, -1.8);
+
+// ---- soft clouds drifting across the sky ----
+const clouds = [];
+{
+  const makeCloudPlane = (z, y, w2, o) => {
+    const cw = 2048, ch = 512;
+    const sharp = makeCanvas(cw, ch);
+    const g = sharp.getContext('2d');
+    for (let i = 0; i < 5; i++) {
+      const cx = rand(cw * 0.08, cw * 0.92), cy = rand(ch * 0.3, ch * 0.7), s = rand(60, 140);
+      for (let b = 0; b < 14; b++) {
+        g.fillStyle = `rgba(255,252,244,${rand(0.4, 0.85)})`;
+        g.beginPath();
+        g.ellipse(
+          cx + rand(-s * 2.6, s * 2.6), cy + rand(-s * 0.45, s * 0.45),
+          rand(s * 0.5, s * 1.3), rand(s * 0.18, s * 0.42), 0, 0, TAU);
+        g.fill();
+      }
+    }
+    const c = makeCanvas(cw, ch);
+    const out = c.getContext('2d');
+    out.filter = 'blur(16px)';
+    out.drawImage(sharp, 0, 0);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w2, w2 * (ch / cw) * 0.55),
+      new THREE.MeshBasicMaterial({ map: canvasTex(c), transparent: true, opacity: o, depthWrite: false, fog: false }),
+    );
+    m.position.set(rand(-25, 25), y, z);
+    m.userData.speed = rand(0.12, 0.28);
+    clouds.push(m);
+    scene.add(m);
+  };
+  makeCloudPlane(-150, 48, 420, 0.5);
+  makeCloudPlane(-140, 30, 340, 0.38);
+}
 
 // ---- mist drifting between the layers ----
 const mists = [];
@@ -346,6 +429,12 @@ function frame() {
   // mist drifts sideways, barely
   for (const m of mists) {
     m.position.x = m.userData.baseX + Math.sin(t * m.userData.speed * 10 + m.userData.phase) * 4;
+  }
+
+  // clouds cross the sky very slowly, wrapping around
+  for (const cl of clouds) {
+    cl.position.x += cl.userData.speed * dt;
+    if (cl.position.x > 90) cl.position.x = -90;
   }
 
   // pollen floats and twinkles
