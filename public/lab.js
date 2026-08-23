@@ -70,7 +70,7 @@ function radialTex(size, stops) {
 // ============================================================
 
 // ---- sky: luminous near the horizon, deeper green-blue above ----
-const SUN_DIR = new THREE.Vector3(0.42, 0.3, -0.82).normalize(); // clearly up in the open sky
+const SUN_DIR = new THREE.Vector3(0.42, 0.38, -0.78).normalize(); // clearly up in the open sky
 {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -109,8 +109,8 @@ const SUN_DIR = new THREE.Vector3(0.42, 0.3, -0.82).normalize(); // clearly up i
 scene.fog = new THREE.FogExp2(0xbcd9c2, 0.009);
 
 // ---- lighting (soft, warm, storybook daylight) ----
-scene.add(new THREE.HemisphereLight(0xcfe6f2, 0x4a6b4e, 1.05));
-scene.add(new THREE.AmbientLight(0x7fa87f, 0.35));
+scene.add(new THREE.HemisphereLight(0xcfe6f2, 0x55795a, 1.2));
+scene.add(new THREE.AmbientLight(0x86b088, 0.55));
 const sun = new THREE.DirectionalLight(0xfff0c2, 1.6);
 sun.position.copy(SUN_DIR).multiplyScalar(40);
 sun.castShadow = true;
@@ -120,6 +120,10 @@ sun.shadow.camera.top = 24; sun.shadow.camera.bottom = -12;
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
 sun.shadow.bias = -0.0015;
 scene.add(sun);
+// soft fill from behind the camera so camera-facing foliage never goes murky
+const fill = new THREE.DirectionalLight(0xd8f2dc, 0.9);
+fill.position.set(-6, 9, 22);
+scene.add(fill);
 
 // ---- painterly distance layers (painted canvases on soft billboards) ----
 // Each layer is hand-painted with organic, non-repeating silhouettes and a
@@ -398,7 +402,7 @@ let pollen;
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -30);
   const pos = geo.attributes.position;
-  const near = new THREE.Color(0x4c7048), far = new THREE.Color(0xcfe4ac);
+  const near = new THREE.Color(0x587e53), far = new THREE.Color(0xcfe4ac);
   const colors = [];
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
@@ -415,199 +419,271 @@ let pollen;
 }
 
 // ============================================================
-// LAYER 2 — MID-DISTANCE TREES
-// Individually painted trees on transparent billboards, standing in real
-// 3D space (z −40 … −11). Three depth tiers inside the layer: far trees
-// lighter/softer, near trees darker with stronger silhouettes. The center
-// stays open — trees frame the future clearing from the sides.
+// LAYER 2 — MID-DISTANCE TREES (true 3D)
+// Volumetric trees: curved tapering trunk tubes, branches growing in all
+// directions (toward and away from the camera too), canopies sculpted from
+// noise-displaced leaf blobs merged per tree. Lit by the real sun, faded
+// by real fog — the depth is physical, not painted.
 // ============================================================
 
-const cssCol = (c) => '#' + c.getHexString();
-
-function paintTree(tier) { // 0 = far, 1 = middle, 2 = nearer
-  const W = 680, H = 768;
-  const sharp = makeCanvas(W, H);
-  const g = sharp.getContext('2d');
-
-  const GREENS2 = [0x1e4d33, 0x2f6b46, 0x2e7553, 0x55703c, 0x6f9652, 0x24593c];
-  const hazeMix = [0.32, 0.15, 0.04][tier];
-  const mainGreen = new THREE.Color(pick(GREENS2)).lerp(HAZE, hazeMix);
-  const altGreen = mainGreen.clone().offsetHSL(rand(-0.02, 0.02), rand(-0.06, 0.06), rand(-0.05, 0.05));
-  const dark = mainGreen.clone().lerp(new THREE.Color(0x102b1f), 0.38);
-  const lite = mainGreen.clone().lerp(new THREE.Color(0xd8ecb0), 0.3);
-  const trunkC = new THREE.Color(pick([0x4a3c30, 0x554738, 0x4a443a])).lerp(HAZE, hazeMix * 0.7);
-  const trunkLite = trunkC.clone().lerp(new THREE.Color(0xd8b884), 0.4);
-
-  // ---- trunk: a gently curved, tapering polygon (never a straight pole)
-  const baseX = W / 2 + rand(-24, 24);
-  const baseY = H - 12;
-  const trunkH = H * rand(0.42, 0.56);
-  const leanPx = rand(-60, 60);
-  const ctrlX = baseX + leanPx * rand(0.15, 0.7);
-  const topX = baseX + leanPx;
-  const topY = baseY - trunkH;
-  const w0 = H * rand(0.026, 0.048) * (tier === 2 ? 1.2 : 1);
-  const w1 = w0 * rand(0.32, 0.5);
-  const PT = (t) => [
-    (1 - t) * (1 - t) * baseX + 2 * (1 - t) * t * ctrlX + t * t * topX,
-    (1 - t) * (1 - t) * baseY + 2 * (1 - t) * t * (baseY - trunkH * 0.55) + t * t * topY,
-  ];
-  g.fillStyle = cssCol(trunkC);
-  g.beginPath();
-  const NSEG = 8;
-  for (let i = 0; i <= NSEG; i++) {
-    const t = i / NSEG;
-    const [x, y] = PT(t);
-    const hw = lerp(w0, w1, t) / 2;
-    if (i === 0) g.moveTo(x - hw, y); else g.lineTo(x - hw, y);
-  }
-  for (let i = NSEG; i >= 0; i--) {
-    const t = i / NSEG;
-    const [x, y] = PT(t);
-    g.lineTo(x + lerp(w0, w1, t) / 2, y);
-  }
-  g.closePath();
-  g.fill();
-  // root flare
-  g.beginPath();
-  g.moveTo(baseX - w0 * 1.5, baseY);
-  g.quadraticCurveTo(baseX - w0 * 0.55, baseY - w0 * 0.9, baseX - w0 * 0.4, baseY - w0 * 1.4);
-  g.lineTo(baseX + w0 * 0.4, baseY - w0 * 1.4);
-  g.quadraticCurveTo(baseX + w0 * 0.55, baseY - w0 * 0.9, baseX + w0 * 1.5, baseY);
-  g.closePath();
-  g.fill();
-  // warm light on the sun side of the trunk
-  g.globalCompositeOperation = 'source-atop';
-  g.globalAlpha = 0.4;
-  g.fillStyle = cssCol(trunkLite);
-  for (let i = 0; i < NSEG; i++) {
-    const t = i / NSEG;
-    const [x, y] = PT(t);
-    const hw = lerp(w0, w1, t) / 2;
-    g.fillRect(x + hw * 0.25, y - trunkH / NSEG - 2, hw * 0.55, trunkH / NSEG + 4);
-  }
-  g.globalAlpha = 1;
-  g.globalCompositeOperation = 'source-over';
-
-  // ---- branches reaching out of the upper trunk; their tips seed foliage
-  const anchors = [[topX, topY]];
-  const branches = randInt(2, 4);
-  const forked = Math.random() < 0.35;
-  for (let b = 0; b < branches + (forked ? 1 : 0); b++) {
-    const t0 = forked && b === 0 ? rand(0.5, 0.65) : rand(0.7, 0.98);
-    const [sx, sy] = PT(t0);
-    const ang = rand(-2.5, -0.6) * (Math.random() < 0.5 ? 1 : -1) * 0.55 - Math.PI / 2 * 0.2;
-    const len = trunkH * rand(0.22, forked && b === 0 ? 0.5 : 0.38);
-    const dir = pick([-1, 1]);
-    const ex = sx + Math.cos(ang) * len * dir;
-    const ey = sy - Math.abs(Math.sin(ang)) * len * rand(0.5, 1);
-    g.strokeStyle = cssCol(trunkC);
-    g.lineCap = 'round';
-    let px = sx, py = sy;
-    for (let s2 = 1; s2 <= 3; s2++) {
-      const tt = s2 / 3;
-      const nx = lerp(sx, ex, tt) + rand(-6, 6);
-      const ny = lerp(sy, ey, tt) + rand(-4, 4);
-      g.lineWidth = lerp(w1 * 0.9, w1 * 0.25, tt);
-      g.beginPath();
-      g.moveTo(px, py);
-      g.lineTo(nx, ny);
-      g.stroke();
-      px = nx; py = ny;
-    }
-    anchors.push([ex, ey]);
-  }
-
-  // ---- canopy: several irregular leaf masses around the anchors
-  const canopyR = H * rand(0.11, 0.16);
-  const wide = Math.random() < 0.5; // wide crown vs tall crown
-  const masses = randInt(5, 8);
-  const leafMass = (cx, cy, r, col) => {
-    g.fillStyle = cssCol(col);
-    for (let b = 0; b < 6; b++) {
-      g.beginPath();
-      g.arc(cx + rand(-r, r) * 0.55, cy + rand(-r * 0.45, r * 0.4), r * rand(0.35, 0.6), 0, TAU);
-      g.fill();
-    }
-    for (let s2 = 0; s2 < 16; s2++) { // leafy ragged edge
-      const a = rand(0, TAU);
-      g.beginPath();
-      g.arc(cx + Math.cos(a) * r * rand(0.65, 1.05), cy + Math.sin(a) * r * rand(0.5, 0.9) * 0.8, r * rand(0.06, 0.14), 0, TAU);
-      g.fill();
-    }
-    g.globalCompositeOperation = 'source-atop';
-    g.globalAlpha = 0.26;
-    g.fillStyle = cssCol(dark);
-    for (let s2 = 0; s2 < 3; s2++) {
-      g.beginPath();
-      g.arc(cx - r * rand(0, 0.4), cy + r * rand(0.05, 0.4), r * rand(0.25, 0.45), 0, TAU);
-      g.fill();
-    }
-    g.fillStyle = cssCol(lite);
-    for (let s2 = 0; s2 < 2; s2++) {
-      g.beginPath();
-      g.arc(cx + r * rand(0.1, 0.4), cy - r * rand(0, 0.35), r * rand(0.22, 0.38), 0, TAU);
-      g.fill();
-    }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
+const WIND = { time: { value: 0 }, gust: { value: 1 } };
+function addWind(mat, strength, heightK) {
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uWTime = WIND.time;
+    sh.uniforms.uWGust = WIND.gust;
+    sh.uniforms.uWStr = { value: strength };
+    sh.uniforms.uWHk = { value: heightK };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>',
+        '#include <common>\nuniform float uWTime; uniform float uWGust; uniform float uWStr; uniform float uWHk;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec4 wpos = modelMatrix * vec4(transformed, 1.0);
+          float wh = clamp(wpos.y * uWHk, 0.0, 1.4);
+          float sway = sin(uWTime * 1.1 + wpos.x * 0.35 + wpos.z * 0.5)
+                     + 0.6 * sin(uWTime * 1.9 + wpos.x * 0.9 + wpos.y * 0.5);
+          float flut = sin(uWTime * 4.6 + wpos.x * 2.8 + wpos.y * 2.1 + wpos.z * 1.9);
+          float k = uWStr * uWGust * wh;
+          transformed.x += (sway * 0.06 + flut * 0.018) * k;
+          transformed.z += (sway * 0.04 + flut * 0.014) * k;
+          transformed.y += flut * 0.016 * k;
+        }
+      `);
   };
-  for (let m = 0; m < masses; m++) {
-    const [ax, ay] = pick(anchors);
-    const spreadX = canopyR * (wide ? rand(0.4, 2.0) : rand(0.3, 1.1));
-    const spreadY = canopyR * (wide ? rand(0.25, 0.9) : rand(0.5, 1.6));
-    leafMass(
-      clamp(ax + rand(-spreadX, spreadX), canopyR * 1.25, W - canopyR * 1.25),
-      clamp(ay - rand(0, spreadY), canopyR * 1.2, H),
-      canopyR * rand(0.7, 1.05),
-      Math.random() < 0.5 ? mainGreen : altGreen);
+}
+
+// bark and leaf-surface micro textures (procedural)
+const barkTexture = (() => {
+  const c = makeCanvas(128, 256);
+  const g = c.getContext('2d');
+  g.fillStyle = '#57493b';
+  g.fillRect(0, 0, 128, 256);
+  for (let i = 0; i < 240; i++) {
+    g.strokeStyle = `rgba(${randInt(24, 74)},${randInt(20, 62)},${randInt(14, 44)},${rand(0.16, 0.4)})`;
+    g.lineWidth = rand(1, 3.4);
+    const x = rand(0, 128);
+    g.beginPath();
+    g.moveTo(x, -8);
+    g.bezierCurveTo(x + rand(-9, 9), 64, x + rand(-9, 9), 176, x + rand(-11, 11), 264);
+    g.stroke();
   }
-  // small light gaps in the canopy (skip the far tier — too soft to matter)
-  if (tier > 0) {
-    g.globalCompositeOperation = 'destination-out';
-    for (let hole = 0; hole < randInt(2, 4); hole++) {
-      g.globalAlpha = rand(0.5, 0.9);
-      g.beginPath();
-      g.arc(topX + rand(-canopyR * 1.4, canopyR * 1.4), topY - rand(0, canopyR * 1.2), rand(5, 13), 0, TAU);
-      g.fill();
+  for (let i = 0; i < 30; i++) {
+    g.fillStyle = `rgba(${randInt(70, 100)},${randInt(105, 135)},${randInt(70, 95)},${rand(0.08, 0.2)})`;
+    g.beginPath();
+    g.ellipse(rand(0, 128), rand(0, 256), rand(2, 8), rand(4, 13), 0, 0, TAU);
+    g.fill();
+  }
+  const t = canvasTex(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+})();
+
+const leafMottleTexture = (() => {
+  const c = makeCanvas(128, 128);
+  const g = c.getContext('2d');
+  g.fillStyle = '#e9efe4';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 700; i++) {
+    g.fillStyle = pick(['rgba(115,140,110,0.35)', 'rgba(210,225,195,0.4)', 'rgba(90,115,88,0.28)']);
+    g.beginPath();
+    g.ellipse(rand(0, 128), rand(0, 128), rand(1.5, 5), rand(1, 3), rand(0, TAU), 0, TAU);
+    g.fill();
+  }
+  const t = canvasTex(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3, 3);
+  return t;
+})();
+
+const woodMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 1 });
+const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: leafMottleTexture });
+addWind(leafMat, 0.55, 0.13);
+addWind(woodMat, 0.1, 0.08);
+
+const LEAF_GREENS = [0x357d50, 0x469361, 0x2f6b46, 0x5f8743, 0x74a05a, 0x3e8258];
+
+function geoArrays() { return { pos: [], norm: [], uv: [], col: [], idx: [] }; }
+function buildGeo(A, withColor) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(A.pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(A.norm, 3));
+  if (withColor) geo.setAttribute('color', new THREE.Float32BufferAttribute(A.col, 3));
+  else geo.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
+  geo.setIndex(A.idx);
+  return geo;
+}
+
+// sweep a tapering tube along points (parallel-transport frames) — trunks & branches
+function tubeInto(A, pts, r0, r1, radial) {
+  const tan = new THREE.Vector3();
+  const nrm = new THREE.Vector3(1, 0, 0);
+  const bin = new THREE.Vector3();
+  let prevRing = -1;
+  for (let i = 0; i < pts.length; i++) {
+    const t = i / (pts.length - 1);
+    tan.copy(pts[Math.min(i + 1, pts.length - 1)]).sub(pts[Math.max(i - 1, 0)]).normalize();
+    nrm.addScaledVector(tan, -nrm.dot(tan));
+    if (nrm.lengthSq() < 0.01) nrm.set(tan.y, tan.z, tan.x).addScaledVector(tan, -tan.dot(new THREE.Vector3(tan.y, tan.z, tan.x)));
+    nrm.normalize();
+    bin.crossVectors(tan, nrm);
+    const r = lerp(r0, r1, t);
+    const ring = A.pos.length / 3;
+    for (let j = 0; j <= radial; j++) {
+      const a = (j / radial) * TAU;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      const wob = 1 + Math.sin(a * 3 + i * 1.7) * 0.06;
+      A.pos.push(
+        pts[i].x + (nrm.x * dx + bin.x * dy) * r * wob,
+        pts[i].y + (nrm.y * dx + bin.y * dy) * r * wob,
+        pts[i].z + (nrm.z * dx + bin.z * dy) * r * wob);
+      A.norm.push(nrm.x * dx + bin.x * dy, nrm.y * dx + bin.y * dy, nrm.z * dx + bin.z * dy);
+      A.uv.push(j / radial, t * 6);
     }
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
+    if (prevRing >= 0) {
+      for (let j = 0; j < radial; j++) {
+        const a2 = prevRing + j, b2 = a2 + 1, c2 = ring + j, d2 = c2 + 1;
+        A.idx.push(a2, c2, b2, b2, c2, d2);
+      }
+    }
+    prevRing = ring;
+  }
+}
+
+// a noise-displaced leaf blob with baked top-light, appended with vertex color
+const _m4 = new THREE.Matrix4();
+const _nm = new THREE.Matrix3();
+function blobInto(A, center, r, scaleV, color) {
+  const geo = new THREE.SphereGeometry(r, 10, 8);
+  const p = geo.attributes.position;
+  const seed = rand(0, 100);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.set(p.getX(i), p.getY(i), p.getZ(i));
+    const n = 0.8
+      + 0.2 * Math.sin(v.x * 3.1 / r + seed) * Math.sin(v.y * 2.6 / r + seed * 2)
+      + 0.14 * Math.sin(v.z * 3.7 / r + seed * 3);
+    v.multiplyScalar(n);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  _m4.makeScale(scaleV.x, scaleV.y, scaleV.z);
+  _m4.setPosition(center.x, center.y, center.z);
+  _nm.getNormalMatrix(_m4);
+  const nAttr = geo.attributes.normal;
+  const start = A.pos.length / 3;
+  for (let i = 0; i < p.count; i++) {
+    v.set(p.getX(i), p.getY(i), p.getZ(i));
+    const shade = clamp(0.9 + 0.22 * (v.y / r), 0.74, 1.12); // lit tops, shaded undersides
+    v.applyMatrix4(_m4);
+    A.pos.push(v.x, v.y, v.z);
+    v.set(nAttr.getX(i), nAttr.getY(i), nAttr.getZ(i)).applyMatrix3(_nm).normalize();
+    A.norm.push(v.x, v.y, v.z);
+    A.col.push(color.r * shade, color.g * shade, color.b * shade);
+  }
+  const idx = geo.index.array;
+  for (let i = 0; i < idx.length; i++) A.idx.push(start + idx[i]);
+  geo.dispose();
+}
+
+function makeTree3D(tier) {
+  const g2 = new THREE.Group();
+  const H = [rand(5.5, 8), rand(8, 11), rand(10.5, 13)][tier];
+  const R0 = H * 0.022 * rand(0.8, 1.3) + 0.05;
+  const wood = geoArrays();
+  const leaves = geoArrays();
+
+  // trunk: curved, tapering, leaning its own way
+  const leanA = rand(0, TAU);
+  const leanM = rand(0, 0.16) * H;
+  const bendM = rand(-0.09, 0.09) * H;
+  const trunkTopY = H * rand(0.52, 0.62);
+  const pts = [];
+  for (let i = 0; i <= 6; i++) {
+    const t = i / 6;
+    const bow = Math.sin(t * Math.PI) * bendM;
+    pts.push(new THREE.Vector3(
+      Math.cos(leanA) * (leanM * t * t) + Math.cos(leanA + 1.7) * bow,
+      t * trunkTopY,
+      Math.sin(leanA) * (leanM * t * t) + Math.sin(leanA + 1.7) * bow));
+  }
+  tubeInto(wood, pts, R0, R0 * 0.42, 8);
+  // root flares
+  for (let k = 0; k < 4; k++) {
+    const a = rand(0, TAU);
+    tubeInto(wood, [
+      new THREE.Vector3(Math.cos(a) * R0 * 0.4, R0 * 1.6, Math.sin(a) * R0 * 0.4),
+      new THREE.Vector3(Math.cos(a) * R0 * rand(1.6, 2.4), 0.02, Math.sin(a) * R0 * rand(1.6, 2.4)),
+    ], R0 * 0.42, R0 * 0.16, 5);
   }
 
-  // ---- tiny grass tuft at the base (sometimes)
-  if (Math.random() < 0.6) {
-    g.strokeStyle = cssCol(dark);
-    g.lineWidth = 3;
-    g.lineCap = 'round';
-    for (let s2 = 0; s2 < randInt(4, 9); s2++) {
-      const gx = baseX + rand(-w0 * 2.2, w0 * 2.2);
-      g.beginPath();
-      g.moveTo(gx, baseY + 6);
-      g.quadraticCurveTo(gx + rand(-6, 6), baseY - rand(6, 16), gx + rand(-12, 12), baseY - rand(14, 26));
-      g.stroke();
+  const trunkPoint = (t) => {
+    const i = t * 6;
+    const i0 = Math.floor(i), i1 = Math.min(6, i0 + 1);
+    return pts[i0].clone().lerp(pts[i1], i - i0);
+  };
+
+  // branches: real 3D directions — some toward the camera, some away
+  const anchors = [pts[6].clone()];
+  const nBranch = randInt(3, 5) + (Math.random() < 0.35 ? 1 : 0);
+  for (let b = 0; b < nBranch; b++) {
+    const t0 = b === 0 && Math.random() < 0.35 ? rand(0.45, 0.6) : rand(0.62, 0.96);
+    const start = trunkPoint(t0);
+    const az = rand(0, TAU);
+    const len = H * rand(0.2, 0.4) * (b === 0 ? 1.25 : 1);
+    const upness = rand(0.35, 0.95);
+    const bpts = [start];
+    let dir = new THREE.Vector3(Math.cos(az) * (1 - upness), upness, Math.sin(az) * (1 - upness)).normalize();
+    let p2 = start.clone();
+    for (let s2 = 1; s2 <= 3; s2++) {
+      p2 = p2.clone().addScaledVector(dir, len / 3);
+      dir = dir.clone();
+      dir.y += rand(0.05, 0.25); // branches lift toward the light
+      dir.x += rand(-0.2, 0.2);
+      dir.z += rand(-0.2, 0.2);
+      dir.normalize();
+      bpts.push(p2);
     }
+    tubeInto(wood, bpts, R0 * lerp(0.55, 0.3, t0), 0.015, 6);
+    anchors.push(bpts[2], bpts[3]);
   }
 
-  // far trees melt slightly into the atmosphere
-  if (tier === 0) {
-    const c = makeCanvas(W, H);
-    const out = c.getContext('2d');
-    out.filter = 'blur(1.4px)';
-    out.drawImage(sharp, 0, 0);
-    return c;
+  // canopy: leaf blobs at branch tips plus filler around the crown centre
+  const crownC = new THREE.Vector3();
+  for (const a of anchors) crownC.add(a);
+  crownC.divideScalar(anchors.length);
+  crownC.y += H * 0.08;
+  const wide = Math.random() < 0.5;
+  const spreadX = H * (wide ? rand(0.24, 0.34) : rand(0.16, 0.24));
+  const spreadY = H * (wide ? rand(0.12, 0.18) : rand(0.18, 0.28));
+  const hazeMix = [0.3, 0.14, 0.03][tier];
+  const puffs = randInt(9, 13);
+  for (let i = 0; i < puffs; i++) {
+    const c2 = i < anchors.length
+      ? anchors[i].clone().add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.1, 0.4), rand(-0.3, 0.3)))
+      : crownC.clone().add(new THREE.Vector3(rand(-spreadX, spreadX), rand(-spreadY, spreadY), rand(-spreadX, spreadX)));
+    const col = new THREE.Color(pick(LEAF_GREENS))
+      .offsetHSL(rand(-0.015, 0.015), rand(-0.05, 0.05), rand(-0.03, 0.03))
+      .lerp(HAZE, hazeMix);
+    blobInto(leaves, c2, H * rand(0.085, 0.15),
+      new THREE.Vector3(rand(0.85, 1.3), rand(0.6, 0.95), rand(0.85, 1.3)), col);
   }
-  return sharp;
+
+  const woodMesh = new THREE.Mesh(buildGeo(wood, false), woodMat);
+  woodMesh.castShadow = true;
+  g2.add(woodMesh);
+  const leafMesh = new THREE.Mesh(buildGeo(leaves, true), leafMat);
+  leafMesh.castShadow = true;
+  g2.add(leafMesh);
+  return g2;
 }
 
 const midTrees = [];
 {
-  // organic clusters framing the center; the clearing itself stays open
   const clusters = [
     { x: -18, n: randInt(2, 3) }, { x: -12, n: randInt(2, 4) }, { x: -7, n: randInt(1, 2) },
     { x: 6.5, n: randInt(1, 2) }, { x: 11.5, n: randInt(2, 4) }, { x: 17, n: randInt(2, 3) },
-    { x: rand(-4, 4), n: randInt(1, 2), farOnly: true }, // small distant trees peeking through the middle
-    // guaranteed strong framing trees so no random roll leaves the sides bare
+    { x: rand(-4, 4), n: randInt(1, 2), farOnly: true }, // small distant trees through the middle
+    // guaranteed framing trees so no random roll leaves the sides bare
     { x: -rand(9.5, 13), n: 1, nearOnly: true },
     { x: rand(9.5, 13), n: 1, nearOnly: true },
   ];
@@ -615,23 +691,15 @@ const midTrees = [];
     for (let i = 0; i < cl.n; i++) {
       const tier = cl.farOnly ? 0 : cl.nearOnly ? 2 : (Math.random() < 0.35 ? 0 : Math.random() < 0.6 ? 1 : 2);
       const z = [rand(-40, -28), rand(-26, -18), rand(-16, -11)][tier];
-      const worldH = [rand(6.5, 9), rand(9, 12.5), rand(12, 15.5)][tier];
       let x = cl.x + rand(-2.4, 2.4);
-      // keep the central stage clear of near/mid trunks
-      const minX = [2.2, 4.5, 7.5][tier];
+      const minX = [2.2, 4.5, 7.5][tier]; // keep the central stage open
       if (Math.abs(x) < minX) x = Math.sign(x || 1) * (minX + rand(0, 1.5));
-      const cv = paintTree(tier);
-      const mat = new THREE.MeshBasicMaterial({
-        map: canvasTex(cv), transparent: true, depthWrite: false, fog: false,
-      });
-      const geo = new THREE.PlaneGeometry(worldH * (680 / 768), worldH);
-      geo.translate(0, worldH / 2, 0); // pivot at the roots
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(x, 0.02, z);
-      if (Math.random() < 0.5) m.scale.x = -1; // free variation
-      m.userData = { swayAmp: rand(0.004, 0.011), swaySpeed: rand(0.35, 0.7), phase: rand(0, TAU) };
-      midTrees.push(m);
-      scene.add(m);
+      const tree = makeTree3D(tier);
+      tree.position.set(x, 0, z);
+      tree.rotation.y = rand(0, TAU);
+      tree.userData = { swayAmp: rand(0.003, 0.008), swaySpeed: rand(0.3, 0.6), phase: rand(0, TAU) };
+      midTrees.push(tree);
+      scene.add(tree);
     }
   }
 }
@@ -658,6 +726,10 @@ function frame() {
     cl.position.x += cl.userData.speed * dt;
     if (cl.position.x > 90) cl.position.x = -90;
   }
+
+  // wind gusts rise and fall
+  WIND.time.value = t;
+  WIND.gust.value = 0.75 + Math.sin(t * 0.23) * 0.22 + Math.sin(t * 0.9) * 0.1;
 
   // mid-distance trees breathe in the breeze
   for (const tr of midTrees) {
