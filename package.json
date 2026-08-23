@@ -1,0 +1,14 @@
+{
+  "name": "digital-jungle",
+  "version": "1.0.0",
+  "description": "Kids event attraction: draw a creature on an iPad and watch it come to life in a digital jungle on the LED wall",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.8.0",
+    "three": "^0.185.1",
+    "ws": "^8.18.0"
+  }
+}

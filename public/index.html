@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Jungle</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(160deg, #06281e 0%, #0b4030 55%, #145c40 100%);
+    color: #eafff4;
+  }
+  .card {
+    text-align: center;
+    padding: 48px 40px;
+    max-width: 640px;
+  }
+  h1 { font-size: 2.6rem; margin-bottom: 8px; letter-spacing: 1px; }
+  p.sub { opacity: .8; margin-bottom: 40px; font-size: 1.1rem; }
+  .links { display: flex; gap: 24px; justify-content: center; flex-wrap: wrap; }
+  a.big {
+    display: block; text-decoration: none; color: #eafff4;
+    background: rgba(255,255,255,.08);
+    border: 2px solid rgba(255,255,255,.25);
+    border-radius: 20px; padding: 28px 36px; min-width: 220px;
+    transition: transform .15s, background .15s;
+  }
+  a.big:hover { transform: translateY(-4px); background: rgba(255,255,255,.16); }
+  a.big .emoji { font-size: 3rem; display: block; margin-bottom: 10px; }
+  a.big .title { font-size: 1.3rem; font-weight: 700; }
+  a.big .desc { font-size: .9rem; opacity: .75; margin-top: 6px; }
+  .url { margin-top: 40px; font-size: .95rem; opacity: .7; }
+  .url code { background: rgba(0,0,0,.3); padding: 4px 10px; border-radius: 8px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🌿 Digital Jungle</h1>
+    <p class="sub">Draw a creature — watch it come to life!</p>
+    <div class="links">
+      <a class="big" href="/wall">
+        <span class="emoji">🖥️</span>
+        <span class="title">Jungle Wall</span>
+        <div class="desc">Open this on the LED wall / big screen</div>
+      </a>
+      <a class="big" href="/draw">
+        <span class="emoji">🎨</span>
+        <span class="title">Drawing Canvas</span>
+        <div class="desc">Open this on the iPad / tablet</div>
+      </a>
+    </div>
+    <div class="url" id="urlHint"></div>
+  </div>
+  <script>
+    fetch('/info').then(r => r.json()).then(info => {
+      document.getElementById('urlHint').innerHTML =
+        'On the iPad, browse to: <code>http://' + info.ip + ':' + info.port + '/draw</code>';
+    }).catch(() => {});
+  </script>
+</body>
+</html>

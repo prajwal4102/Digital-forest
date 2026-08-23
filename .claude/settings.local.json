@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(npm install 2>$null)",
+      "PowerShell(npm ls ws)",
+      "PowerShell(node server.js)"
+    ]
+  }
+}

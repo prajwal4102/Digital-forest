@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Draw a Creature!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    overscroll-behavior: none; touch-action: none;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(160deg, #0b4030, #145c40);
+    user-select: none; -webkit-user-select: none;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; padding: 10px; gap: 10px; }
+
+  /* top bar */
+  #topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #title { color: #eafff4; font-weight: 800; font-size: 1.15rem; margin-right: auto; white-space: nowrap; }
+  #name {
+    border: none; border-radius: 12px; padding: 10px 14px; font-size: 1rem;
+    width: 180px; background: rgba(255,255,255,.92); outline: none;
+  }
+  .kindBtn {
+    border: 3px solid transparent; border-radius: 14px; padding: 8px 10px;
+    font-size: .95rem; font-weight: 700; background: rgba(255,255,255,.15);
+    color: #eafff4; cursor: pointer; white-space: nowrap;
+  }
+  .kindBtn.active { background: #fff; color: #0b4030; border-color: #ffd75e; }
+
+  /* main row: tools + canvas */
+  #main { flex: 1; display: flex; gap: 10px; min-height: 0; }
+  #tools {
+    display: grid; grid-template-columns: repeat(2, 46px); gap: 8px;
+    align-content: start; justify-items: center;
+    padding: 10px 8px; background: rgba(0,0,0,.22); border-radius: 18px;
+    overflow-y: auto;
+  }
+  .divider { grid-column: 1 / -1; }
+  .swatch {
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.35); cursor: pointer; flex-shrink: 0;
+  }
+  .swatch.active { border-color: #ffd75e; transform: scale(1.12); box-shadow: 0 0 0 3px rgba(255,215,94,.35); }
+  .divider { width: 70%; height: 1px; background: rgba(255,255,255,.2); margin: 4px 0; flex-shrink: 0; }
+  .sizeBtn {
+    width: 42px; height: 42px; border-radius: 12px; border: 3px solid transparent;
+    background: rgba(255,255,255,.15); cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sizeBtn.active { border-color: #ffd75e; background: rgba(255,255,255,.3); }
+  .sizeBtn i { background: #fff; border-radius: 50%; display: block; }
+  .toolBtn {
+    width: 42px; height: 42px; border-radius: 12px; border: 3px solid transparent;
+    background: rgba(255,255,255,.15); cursor: pointer; font-size: 20px; flex-shrink: 0;
+  }
+  .toolBtn.active { border-color: #ffd75e; background: rgba(255,255,255,.3); }
+
+  #canvasWrap {
+    flex: 1; position: relative; border-radius: 20px; overflow: hidden;
+    background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.35);
+  }
+  #pad { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+  /* bottom bar */
+  #bottombar { display: flex; gap: 10px; }
+  #sendBtn {
+    flex: 1; border: none; border-radius: 16px; padding: 16px;
+    font-size: 1.35rem; font-weight: 800; cursor: pointer;
+    background: linear-gradient(135deg, #ffd75e, #ffb347);
+    color: #4a3200; box-shadow: 0 4px 16px rgba(0,0,0,.3);
+    transition: transform .1s;
+  }
+  #sendBtn:active { transform: scale(.97); }
+  #sendBtn:disabled { opacity: .5; }
+
+  /* sent overlay */
+  #overlay {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    background: rgba(6,40,30,.88); z-index: 10; color: #eafff4; text-align: center;
+  }
+  #overlay.show { display: flex; }
+  #overlay .big { font-size: 5rem; animation: pop .6s cubic-bezier(.2,1.6,.4,1); }
+  #overlay .msg { font-size: 1.6rem; font-weight: 800; }
+  #overlay .sub { opacity: .75; }
+  @keyframes pop { 0% { transform: scale(0); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+
+  #connBadge {
+    position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
+    background: #a33; color: #fff; font-size: .85rem; padding: 6px 14px;
+    border-radius: 999px; display: none; z-index: 20;
+  }
+  #connBadge.show { display: block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div id="title">🎨 Draw!</div>
+    <input id="name" placeholder="Your name (optional)" maxlength="20" autocomplete="off">
+    <button class="kindBtn active" data-kind="prowler">🐯 Prowls</button>
+    <button class="kindBtn" data-kind="stomper">🐘 Stomps</button>
+    <button class="kindBtn" data-kind="hopper">🐰 Hops</button>
+    <button class="kindBtn" data-kind="slitherer">🐍 Slithers</button>
+    <button class="kindBtn" data-kind="bird">🐦 Bird</button>
+    <button class="kindBtn" data-kind="butterfly">🦋 Flutters</button>
+    <button class="kindBtn" data-kind="plant">🌿 Grows</button>
+  </div>
+  <div id="main">
+    <div id="tools"></div>
+    <div id="canvasWrap"><canvas id="pad"></canvas></div>
+  </div>
+  <div id="bottombar">
+    <button id="sendBtn">🌿 Send to the Jungle! 🌿</button>
+  </div>
+</div>
+<div id="overlay">
+  <div class="big" id="ovEmoji">🦁</div>
+  <div class="msg">Your creature is alive in the jungle!</div>
+  <div class="sub">Look at the big screen! 👀</div>
+</div>
+<div id="connBadge">Reconnecting to the jungle…</div>
+<script src="draw.js"></script>
+</body>
+</html>

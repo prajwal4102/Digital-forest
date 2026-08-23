@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Jungle — Wall</title>
+<style>
+  * { margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #06281e; cursor: none; }
+  canvas { display: block; }
+  #hint {
+    position: fixed; bottom: 18px; right: 24px;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: rgba(234,255,244,.55); font-size: 15px;
+    background: rgba(0,20,12,.45); padding: 8px 16px; border-radius: 12px;
+    pointer-events: none; transition: opacity .5s; max-width: 60vw;
+  }
+  #status {
+    position: fixed; top: 14px; right: 20px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #f0554e; transition: background .3s; z-index: 5;
+  }
+  #status.on { background: #4ee08a; }
+  #invite {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    pointer-events: none; text-align: center;
+    font-family: 'Segoe UI', system-ui, sans-serif; color: #eafff4;
+    opacity: 0; transition: opacity 1s;
+    text-shadow: 0 2px 24px rgba(0,40,20,.9);
+    transform: translateY(-6vh);
+  }
+  #invite.show { opacity: 1; }
+  #invite h1 { font-size: 5.2vh; letter-spacing: 1px; animation: breathe 3s ease-in-out infinite; }
+  #invite p { font-size: 2.6vh; opacity: .85; }
+  @keyframes breathe { 0%,100% { opacity: .75 } 50% { opacity: 1 } }
+</style>
+</head>
+<body>
+  <div id="invite"><h1>🌿 The Digital Jungle 🌿</h1><p>Draw a creature to bring the jungle to life!</p></div>
+  <div id="hint">loading…</div>
+  <div id="status"></div>
+  <script type="module" src="wall.js"></script>
+</body>
+</html>
