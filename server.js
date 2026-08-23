@@ -42,6 +42,7 @@ const server = http.createServer((req, res) => {
   if (urlPath === '/') urlPath = '/index.html';
   if (urlPath === '/wall') urlPath = '/wall.html';
   if (urlPath === '/wall2d') urlPath = '/wall2d.html';
+  if (urlPath === '/lab') urlPath = '/lab.html';
   if (urlPath === '/draw') urlPath = '/draw.html';
 
   if (urlPath === '/info') {
