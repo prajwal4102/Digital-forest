@@ -70,16 +70,16 @@ function radialTex(size, stops) {
 // ============================================================
 
 // ---- sky: luminous near the horizon, deeper green-blue above ----
-const SUN_DIR = new THREE.Vector3(0.42, 0.16, -0.89).normalize(); // low, off-center right
+const SUN_DIR = new THREE.Vector3(0.42, 0.3, -0.82).normalize(); // clearly up in the open sky
 {
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      top: { value: new THREE.Color(0x2e6058) },
-      mid: { value: new THREE.Color(0x86b98c) },
-      hor: { value: new THREE.Color(0xdfeab2) },
-      warm: { value: new THREE.Color(0xfff0c0) },
+      top: { value: new THREE.Color(0x3f8ecb) },   // soft storybook blue
+      mid: { value: new THREE.Color(0x9fd0e8) },   // pale blue
+      hor: { value: new THREE.Color(0xf6eec6) },   // warm cream at the horizon
+      warm: { value: new THREE.Color(0xfff3c4) },
       sunDir: { value: SUN_DIR },
     },
     vertexShader: `
@@ -106,10 +106,10 @@ const SUN_DIR = new THREE.Vector3(0.42, 0.16, -0.89).normalize(); // low, off-ce
 }
 
 // gentle atmosphere for the (future) mid/foreground; painted layers opt out
-scene.fog = new THREE.FogExp2(0x9cc9a4, 0.011);
+scene.fog = new THREE.FogExp2(0xbcd9c2, 0.009);
 
-// ---- lighting (soft, warm, storybook noon-through-leaves) ----
-scene.add(new THREE.HemisphereLight(0xd8eebc, 0x4a6b4e, 1.05));
+// ---- lighting (soft, warm, storybook daylight) ----
+scene.add(new THREE.HemisphereLight(0xcfe6f2, 0x4a6b4e, 1.05));
 scene.add(new THREE.AmbientLight(0x7fa87f, 0.35));
 const sun = new THREE.DirectionalLight(0xfff0c2, 1.6);
 sun.position.copy(SUN_DIR).multiplyScalar(40);
@@ -126,7 +126,7 @@ scene.add(sun);
 // canvas blur so far things melt into the haze. Scene fog is disabled on
 // them — their haze is painted in, mixed toward the horizon color.
 
-const HAZE = new THREE.Color(0xdcecb8); // what "far away" fades into
+const HAZE = new THREE.Color(0xe9efc6); // what "far away" fades into
 
 function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
   // draw sharp shapes first; blur ONCE at the end (per-draw blur is way too slow)
@@ -168,8 +168,12 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
       const tall = Math.random() < 0.12;
       const cy = baseY - (tall ? rand(70, 130) : rand(-10, 45));
       crown(x, cy, r);
-      // fill down to the bottom under the crown
-      g.fillRect(x - r * 0.9, cy, r * 1.8, h - cy);
+      // fill down to the bottom under the crown, shoulders rounded off
+      g.fillRect(x - r * 0.55, cy + r * 0.15, r * 1.1, h - cy);
+      g.beginPath();
+      g.arc(x - r * 0.55, cy + r * 0.45, r * 0.35, 0, TAU);
+      g.arc(x + r * 0.55, cy + r * 0.45, r * 0.35, 0, TAU);
+      g.fill();
       if (tall && Math.random() < 0.7) g.fillRect(x - 3, cy, 6, baseY - cy + 24);
       x += r * rand(0.55, Math.random() < 0.12 ? 2.6 : 1.15); // rare dips of sky
     }
@@ -221,11 +225,12 @@ function distanceLayer(opts, z, worldW, worldH, yBottom) {
   return m;
 }
 
-// farthest → nearest: cool teal far away, warming and deepening as it nears
-distanceLayer({ kind: 'hills', blur: 7, color: 0x6fa3a4, haze: 0.5 }, -120, 320, 34, -4);
-distanceLayer({ kind: 'hills', blur: 6, color: 0x5f998f, haze: 0.36 }, -100, 270, 26, -3.5);
-distanceLayer({ kind: 'treeline', blur: 4, color: 0x447c62, haze: 0.16 }, -80, 220, 18, -2.5);
-distanceLayer({ kind: 'clusters', blur: 2, color: 0x2d6247, haze: 0.04 }, -62, 170, 15, -1.8);
+// farthest → nearest: soft blue-green far away, rich green up close —
+// every band clearly readable, haze kept light so nothing gets buried
+distanceLayer({ kind: 'hills', blur: 6, color: 0x7aa89b, haze: 0.32 }, -120, 320, 34, -4);
+distanceLayer({ kind: 'hills', blur: 5, color: 0x649472, haze: 0.2 }, -100, 270, 26, -3.5);
+distanceLayer({ kind: 'treeline', blur: 3, color: 0x487e58, haze: 0.08 }, -80, 220, 18, -2.5);
+distanceLayer({ kind: 'clusters', blur: 1.5, color: 0x2f6a44, haze: 0 }, -62, 170, 15, -1.8);
 
 // ---- mist drifting between the layers ----
 const mists = [];
@@ -248,7 +253,7 @@ const mists = [];
   g.fillStyle = side;
   g.fillRect(0, 0, 512, 128);
   const tex = canvasTex(mistCv);
-  for (const [z, y, w2, o] of [[-90, 2.5, 190, 0.3], [-66, 2.2, 150, 0.22], [-44, 1.8, 110, 0.16]]) {
+  for (const [z, y, w2, o] of [[-90, 2.5, 190, 0.16], [-70, 2.2, 150, 0.1]]) {
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(w2, w2 * 0.09),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: o, depthWrite: false, fog: false }),
@@ -260,24 +265,26 @@ const mists = [];
   }
 }
 
-// ---- sun glow, tucked behind and spilling between the distant trees ----
+// ---- the sun: a clearly visible warm disc with a soft halo ----
 {
-  const sunAnchor = SUN_DIR.clone().multiplyScalar(105); // behind the treeline
-  const glowBig = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: radialTex(256, [[0, 'rgba(255,244,196,0.5)'], [0.4, 'rgba(255,240,185,0.16)'], [1, 'rgba(255,240,185,0)']]),
+  const sunAnchor = SUN_DIR.clone().multiplyScalar(150);
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: radialTex(256, [[0, 'rgba(255,246,200,0.55)'], [0.35, 'rgba(255,240,185,0.18)'], [1, 'rgba(255,240,185,0)']]),
     blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
   }));
-  glowBig.scale.setScalar(50);
-  glowBig.position.copy(sunAnchor);
-  scene.add(glowBig);
-  // faint spill in FRONT of the treeline — light leaking between trunks
-  const spill = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: radialTex(256, [[0, 'rgba(255,246,210,0.16)'], [1, 'rgba(255,246,210,0)']]),
+  halo.scale.setScalar(70);
+  halo.position.copy(sunAnchor);
+  scene.add(halo);
+  const disc = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: radialTex(256, [
+      [0, 'rgba(255,252,238,1)'], [0.42, 'rgba(255,248,215,1)'],
+      [0.5, 'rgba(255,242,190,0.5)'], [0.7, 'rgba(255,240,185,0.12)'], [1, 'rgba(255,240,185,0)'],
+    ]),
     blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
   }));
-  spill.scale.set(46, 20, 1);
-  spill.position.set(sunAnchor.x * 0.6, 3, -70);
-  scene.add(spill);
+  disc.scale.setScalar(22);
+  disc.position.copy(sunAnchor);
+  scene.add(disc);
 }
 
 // ---- sparse floating pollen / dust ----
