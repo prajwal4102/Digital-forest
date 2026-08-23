@@ -559,9 +559,10 @@ function blobInto(A, center, r, scaleV, color) {
   const v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.set(p.getX(i), p.getY(i), p.getZ(i));
-    const n = 0.8
-      + 0.2 * Math.sin(v.x * 3.1 / r + seed) * Math.sin(v.y * 2.6 / r + seed * 2)
-      + 0.14 * Math.sin(v.z * 3.7 / r + seed * 3);
+    const n = 0.74
+      + 0.24 * Math.sin(v.x * 3.1 / r + seed) * Math.sin(v.y * 2.6 / r + seed * 2)
+      + 0.16 * Math.sin(v.z * 3.7 / r + seed * 3)
+      + 0.09 * Math.sin((v.x + v.y) * 6.3 / r + seed * 5);
     v.multiplyScalar(n);
     p.setXYZ(i, v.x, v.y, v.z);
   }
@@ -587,7 +588,7 @@ function blobInto(A, center, r, scaleV, color) {
 
 function makeTree3D(tier) {
   const g2 = new THREE.Group();
-  const H = [rand(5.5, 8), rand(8, 11), rand(10.5, 13)][tier];
+  const H = [rand(4.8, 7), rand(8, 11), rand(10.5, 13.5)][tier];
   const R0 = H * 0.022 * rand(0.8, 1.3) + 0.05;
   const wood = geoArrays();
   const leaves = geoArrays();
@@ -595,8 +596,8 @@ function makeTree3D(tier) {
   // trunk: curved, tapering, leaning its own way
   const leanA = rand(0, TAU);
   const leanM = rand(0, 0.16) * H;
-  const bendM = rand(-0.09, 0.09) * H;
-  const trunkTopY = H * rand(0.52, 0.62);
+  const bendM = rand(-0.14, 0.14) * H;
+  const trunkTopY = H * rand(0.46, 0.58);
   const pts = [];
   for (let i = 0; i <= 6; i++) {
     const t = i / 6;
@@ -626,7 +627,7 @@ function makeTree3D(tier) {
   const anchors = [pts[6].clone()];
   const nBranch = randInt(3, 5) + (Math.random() < 0.35 ? 1 : 0);
   for (let b = 0; b < nBranch; b++) {
-    const t0 = b === 0 && Math.random() < 0.35 ? rand(0.45, 0.6) : rand(0.62, 0.96);
+    const t0 = b === 0 && Math.random() < 0.35 ? rand(0.4, 0.55) : rand(0.5, 0.95);
     const start = trunkPoint(t0);
     const az = rand(0, TAU);
     const len = H * rand(0.2, 0.4) * (b === 0 ? 1.25 : 1);
@@ -644,35 +645,48 @@ function makeTree3D(tier) {
       bpts.push(p2);
     }
     tubeInto(wood, bpts, R0 * lerp(0.55, 0.3, t0), 0.015, 6);
-    anchors.push(bpts[2], bpts[3]);
+    anchors.push(bpts[2]);
+  }
+
+  // a bare twig or two poking above the crown
+  for (let k = 0; k < randInt(1, 2); k++) {
+    const s0 = pts[6].clone();
+    tubeInto(wood, [s0, s0.clone().add(new THREE.Vector3(rand(-0.5, 0.5), rand(0.7, 1.3), rand(-0.5, 0.5)))], R0 * 0.2, 0.012, 5);
   }
 
   // canopy: leaf blobs at branch tips plus filler around the crown centre
+  const hazeMix = [0.42, 0.18, 0.0][tier];
   const crownC = new THREE.Vector3();
   for (const a of anchors) crownC.add(a);
   crownC.divideScalar(anchors.length);
-  crownC.y += H * 0.08;
-  const wide = Math.random() < 0.5;
-  const spreadX = H * (wide ? rand(0.24, 0.34) : rand(0.16, 0.24));
-  const spreadY = H * (wide ? rand(0.12, 0.18) : rand(0.18, 0.28));
-  const hazeMix = [0.3, 0.14, 0.03][tier];
-  const puffs = randInt(9, 13);
-  for (let i = 0; i < puffs; i++) {
-    const c2 = i < anchors.length
-      ? anchors[i].clone().add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.1, 0.4), rand(-0.3, 0.3)))
-      : crownC.clone().add(new THREE.Vector3(rand(-spreadX, spreadX), rand(-spreadY, spreadY), rand(-spreadX, spreadX)));
-    const col = new THREE.Color(pick(LEAF_GREENS))
-      .offsetHSL(rand(-0.015, 0.015), rand(-0.05, 0.05), rand(-0.03, 0.03))
+  crownC.y += H * 0.1;
+  const clumps = [];
+  for (const a of anchors) {
+    if (Math.random() < 0.12) continue; // some branches stay barer — gaps in the crown
+    clumps.push(a.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(0, 0.35), rand(-0.25, 0.25))));
+  }
+  for (let i = 0; i < 3; i++) {
+    clumps.push(crownC.clone().add(new THREE.Vector3(rand(-0.2, 0.2) * H, rand(-0.06, 0.12) * H, rand(-0.2, 0.2) * H)));
+  }
+  for (const cc of clumps) {
+    const clumpCol = new THREE.Color(pick(LEAF_GREENS))
+      .offsetHSL(rand(-0.015, 0.015), rand(-0.05, 0.05), rand(-0.04, 0.03))
       .lerp(HAZE, hazeMix);
-    blobInto(leaves, c2, H * rand(0.085, 0.15),
-      new THREE.Vector3(rand(0.85, 1.3), rand(0.6, 0.95), rand(0.85, 1.3)), col);
+    const cr = H * rand(0.062, 0.112);
+    for (let b = 0, nB = randInt(3, 5); b < nB; b++) {
+      blobInto(leaves,
+        cc.clone().add(new THREE.Vector3(rand(-cr, cr) * 1.2, rand(-cr, cr) * 0.8, rand(-cr, cr) * 1.2)),
+        cr * rand(0.75, 1.15),
+        new THREE.Vector3(rand(0.8, 1.4), rand(0.55, 0.95), rand(0.8, 1.4)),
+        clumpCol.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.025, 0.025)));
+    }
   }
 
   const woodMesh = new THREE.Mesh(buildGeo(wood, false), woodMat);
-  woodMesh.castShadow = true;
+  woodMesh.castShadow = false; // shadows return with the real ground layer
   g2.add(woodMesh);
   const leafMesh = new THREE.Mesh(buildGeo(leaves, true), leafMat);
-  leafMesh.castShadow = true;
+  leafMesh.castShadow = false;
   g2.add(leafMesh);
   return g2;
 }
@@ -691,7 +705,8 @@ const midTrees = [];
     for (let i = 0; i < cl.n; i++) {
       const tier = cl.farOnly ? 0 : cl.nearOnly ? 2 : (Math.random() < 0.35 ? 0 : Math.random() < 0.6 ? 1 : 2);
       const z = [rand(-40, -28), rand(-26, -18), rand(-16, -11)][tier];
-      let x = cl.x + rand(-2.4, 2.4);
+      let x = cl.x + rand(-1.5, 1.5);
+      if (i > 0 && Math.random() < 0.55) x = cl.x + pick([-1, 1]) * rand(0.4, 1.3); // huddle close — overlap
       const minX = [2.2, 4.5, 7.5][tier]; // keep the central stage open
       if (Math.abs(x) < minX) x = Math.sign(x || 1) * (minX + rand(0, 1.5));
       const tree = makeTree3D(tier);
