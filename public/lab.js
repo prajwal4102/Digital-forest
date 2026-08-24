@@ -148,9 +148,9 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
   // and sunlight catching the upper-right — texture instead of a flat shape
   const crown = (cx, cy, r) => {
     g.fillStyle = css(base);
-    for (let b = 0; b < 6; b++) {
+    for (let b = 0; b < 8; b++) {
       g.beginPath();
-      g.arc(cx + rand(-r, r) * 0.6, cy + rand(-r * 0.5, r * 0.4), r * rand(0.35, 0.6), 0, TAU);
+      g.arc(cx + rand(-r, r) * 0.8, cy + rand(-r * 0.45, r * 0.4), r * rand(0.32, 0.58), 0, TAU);
       g.fill();
     }
     for (let s2 = 0; s2 < 14; s2++) { // ragged leafy edge
@@ -222,7 +222,15 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
       g.arc(x - r * 0.55, cy + r * 0.45, r * 0.35, 0, TAU);
       g.arc(x + r * 0.55, cy + r * 0.45, r * 0.35, 0, TAU);
       g.fill();
-      if (tall && Math.random() < 0.7) g.fillRect(x - 3, cy, 6, baseY - cy + 24);
+      if (tall && Math.random() < 0.6) {
+        g.beginPath();
+        g.moveTo(x - 5, baseY + 20);
+        g.lineTo(x + 5, baseY + 20);
+        g.lineTo(x + 1.5, cy);
+        g.lineTo(x - 1.5, cy);
+        g.closePath();
+        g.fill();
+      }
       x += r * rand(0.55, Math.random() < 0.12 ? 2.6 : 1.15); // rare dips of sky
     }
     // continuous understory hedge so no gaps open below the crowns
@@ -238,10 +246,19 @@ function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
       let cx = x;
       for (let i = 0; i < clump; i++) {
         const r = rand(55, 95);
-        const cy = baseY - rand(40, 100);
-        crown(cx, cy, r);
+        const cy = baseY - rand(26, 72);
+        const lean2 = rand(-12, 12);
+        const tw = rand(7, 11);
         g.fillStyle = css(dark);
-        g.fillRect(cx - rand(4, 6), cy + r * 0.2, rand(8, 12), baseY - cy + 18);
+        g.beginPath();
+        g.moveTo(cx - tw, baseY + 16);
+        g.lineTo(cx + tw, baseY + 16);
+        g.lineTo(cx + lean2 + tw * 0.35, cy + r * 0.25);
+        g.lineTo(cx + lean2 - tw * 0.35, cy + r * 0.25);
+        g.closePath();
+        g.fill();
+        g.fillStyle = '#' + clumpCol.getHexString();
+        crown(cx + lean2 * 0.6, cy, r);
         cx += r * rand(0.7, 1.1);
       }
       x = cx + rand(180, 460); // clear gap before the next clump
@@ -531,12 +548,13 @@ const coreMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 
 const leafMat = new THREE.MeshStandardMaterial({
   vertexColors: true, roughness: 1, map: leafAtlasTexture,
   alphaTest: 0.35, side: THREE.DoubleSide,
+  emissive: 0x1a4526, emissiveIntensity: 0.35,
 });
 addWind(leafMat, 0.9, 0.12);
 addWind(coreMat, 0.45, 0.12);
 addWind(woodMat, 0.1, 0.08);
 
-const LEAF_GREENS = [0x357d50, 0x469361, 0x2f6b46, 0x5f8743, 0x74a05a, 0x3e8258];
+const LEAF_GREENS = [0x3f8a57, 0x52a069, 0x3a7c50, 0x6a9850, 0x7fae63, 0x479366];
 
 function geoArrays() { return { pos: [], norm: [], uv: [], col: [], idx: [] }; }
 function buildGeo(A) {
@@ -551,13 +569,14 @@ function buildGeo(A) {
 
 // one leaf-sprig card: mostly tangent to the clump surface, lit outward
 function cardInto(A, center, size, outward, color, variant) {
-  const n = outward.clone()
-    .add(new THREE.Vector3(rand(-0.7, 0.7), rand(-0.7, 0.7), rand(-0.7, 0.7)))
+  const n = outward.clone().multiplyScalar(0.55)
+    .add(new THREE.Vector3(0, 0.85, 0))
+    .add(new THREE.Vector3(rand(-0.3, 0.3), rand(-0.2, 0.2), rand(-0.3, 0.3)))
     .normalize();
   const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
   const t1 = new THREE.Vector3().crossVectors(n, ref).normalize();
   const t2 = new THREE.Vector3().crossVectors(n, t1);
-  const rot = rand(0, TAU);
+  const rot = rand(-0.7, 0.7);
   const c1 = t1.clone().multiplyScalar(Math.cos(rot)).addScaledVector(t2, Math.sin(rot));
   const c2 = new THREE.Vector3().crossVectors(n, c1);
   const h = size / 2;
@@ -577,7 +596,7 @@ function cardInto(A, center, size, outward, color, variant) {
 }
 
 // sweep a tapering tube along points (parallel-transport frames) — trunks & branches
-function tubeInto(A, pts, r0, r1, radial) {
+function tubeInto(A, pts, r0, r1, radial, flare = 0) {
   const tan = new THREE.Vector3();
   const nrm = new THREE.Vector3(1, 0, 0);
   const bin = new THREE.Vector3();
@@ -589,7 +608,7 @@ function tubeInto(A, pts, r0, r1, radial) {
     if (nrm.lengthSq() < 0.01) nrm.set(tan.y, tan.z, tan.x).addScaledVector(tan, -tan.dot(new THREE.Vector3(tan.y, tan.z, tan.x)));
     nrm.normalize();
     bin.crossVectors(tan, nrm);
-    const r = lerp(r0, r1, t);
+    const r = lerp(r0, r1, t) + flare * Math.pow(1 - t, 5);
     const ring = A.pos.length / 3;
     for (let j = 0; j <= radial; j++) {
       const a = (j / radial) * TAU;
@@ -671,15 +690,7 @@ function makeTree3D(tier) {
       t * trunkTopY,
       Math.sin(leanA) * (leanM * t * t) + Math.sin(leanA + 1.7) * bow));
   }
-  tubeInto(wood, pts, R0, R0 * 0.42, 8);
-  // root flares
-  for (let k = 0; k < 4; k++) {
-    const a = rand(0, TAU);
-    tubeInto(wood, [
-      new THREE.Vector3(Math.cos(a) * R0 * 0.4, R0 * 1.6, Math.sin(a) * R0 * 0.4),
-      new THREE.Vector3(Math.cos(a) * R0 * rand(1.6, 2.4), 0.02, Math.sin(a) * R0 * rand(1.6, 2.4)),
-    ], R0 * 0.42, R0 * 0.16, 5);
-  }
+  tubeInto(wood, pts, R0, R0 * 0.42, 10, R0 * 0.8);
 
   const trunkPoint = (t) => {
     const i = t * 6;
@@ -735,13 +746,13 @@ function makeTree3D(tier) {
   const cardsPerClump = [28, 50, 70][tier];
   for (const cc of clumps) {
     const clumpCol = new THREE.Color(pick(LEAF_GREENS))
-      .offsetHSL(rand(-0.015, 0.015), rand(-0.05, 0.05), rand(-0.04, 0.03))
+      .offsetHSL(rand(-0.015, 0.015), rand(-0.04, 0.04), rand(-0.015, 0.045))
       .lerp(HAZE, hazeMix);
     const cr = H * rand(0.07, 0.12);
     // dark shadowed heart of the clump
     blobInto(core, cc, cr * 0.85,
       new THREE.Vector3(rand(0.9, 1.3), rand(0.6, 0.9), rand(0.9, 1.3)),
-      clumpCol.clone().lerp(new THREE.Color(0x123322), 0.3));
+      clumpCol.clone().lerp(new THREE.Color(0x1d4a2e), 0.22));
     // individual leaf sprigs on the shell — every one flutters on its own
     const nCards = Math.round(cardsPerClump * rand(0.8, 1.25));
     for (let i2 = 0; i2 < nCards; i2++) {
@@ -749,7 +760,7 @@ function makeTree3D(tier) {
       dir.y *= 0.75;
       dir.normalize();
       const pos = cc.clone().addScaledVector(dir, cr * rand(0.55, 1.05));
-      const shade2 = clamp(0.88 + dir.y * 0.2 + rand(-0.05, 0.05), 0.66, 1.1);
+      const shade2 = clamp(0.94 + dir.y * 0.14 + rand(-0.04, 0.04), 0.8, 1.1);
       cardInto(cards, pos, cr * rand(0.85, 1.35), dir,
         clumpCol.clone().multiplyScalar(shade2), randInt(0, 3));
     }
