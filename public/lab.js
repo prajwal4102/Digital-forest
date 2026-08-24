@@ -670,8 +670,8 @@ function blobInto(A, center, r, scaleV, color) {
 
 function makeTree3D(tier) {
   const g2 = new THREE.Group();
-  const H = [rand(4.8, 7), rand(8, 11), rand(10.5, 13.5)][tier];
-  const R0 = H * 0.022 * rand(0.8, 1.3) + 0.05;
+  const H = [rand(4.8, 7), rand(8, 11), rand(10.5, 13.5), rand(13.5, 17.5)][tier];
+  const R0 = H * 0.022 * rand(0.8, 1.3) * (tier === 3 ? 1.3 : 1) + 0.05;
   const wood = geoArrays();
   const core = geoArrays();
   const cards = geoArrays();
@@ -691,6 +691,21 @@ function makeTree3D(tier) {
       Math.sin(leanA) * (leanM * t * t) + Math.sin(leanA + 1.7) * bow));
   }
   tubeInto(wood, pts, R0, R0 * 0.42, 10, R0 * 0.8);
+  if (tier === 3) {
+    // slim exposed roots easing from the trunk into the ground
+    const nR = randInt(4, 6);
+    for (let k = 0; k < nR; k++) {
+      const a = (k / nR) * TAU + rand(-0.4, 0.4);
+      const dx = Math.cos(a), dz = Math.sin(a);
+      const ext = R0 * rand(2.2, 2.8);
+      tubeInto(wood, [
+        new THREE.Vector3(dx * R0 * 0.2, R0 * 1.1, dz * R0 * 0.2),
+        new THREE.Vector3(dx * R0 * 0.9, R0 * 0.55, dz * R0 * 0.9),
+        new THREE.Vector3(dx * R0 * 1.6, R0 * 0.18, dz * R0 * 1.6),
+        new THREE.Vector3(dx * ext, 0.03, dz * ext),
+      ], R0 * 0.24, R0 * 0.04, 5);
+    }
+  }
 
   const trunkPoint = (t) => {
     const i = t * 6;
@@ -730,7 +745,7 @@ function makeTree3D(tier) {
   }
 
   // canopy: leaf blobs at branch tips plus filler around the crown centre
-  const hazeMix = [0.42, 0.18, 0.0][tier];
+  const hazeMix = [0.42, 0.18, 0.0, 0.0][tier];
   const crownC = new THREE.Vector3();
   for (const a of anchors) crownC.add(a);
   crownC.divideScalar(anchors.length);
@@ -740,10 +755,10 @@ function makeTree3D(tier) {
     if (Math.random() < 0.12) continue; // some branches stay barer — gaps in the crown
     clumps.push(a.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(0, 0.35), rand(-0.25, 0.25))));
   }
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < (tier === 3 ? 5 : 3); i++) {
     clumps.push(crownC.clone().add(new THREE.Vector3(rand(-0.2, 0.2) * H, rand(-0.06, 0.12) * H, rand(-0.2, 0.2) * H)));
   }
-  const cardsPerClump = [28, 50, 70][tier];
+  const cardsPerClump = [28, 50, 70, 88][tier];
   for (const cc of clumps) {
     const clumpCol = new THREE.Color(pick(LEAF_GREENS))
       .offsetHSL(rand(-0.015, 0.015), rand(-0.04, 0.04), rand(-0.015, 0.045))
@@ -761,7 +776,7 @@ function makeTree3D(tier) {
       dir.normalize();
       const pos = cc.clone().addScaledVector(dir, cr * rand(0.55, 1.05));
       const shade2 = clamp(0.94 + dir.y * 0.14 + rand(-0.04, 0.04), 0.8, 1.1);
-      cardInto(cards, pos, cr * rand(0.85, 1.35), dir,
+      cardInto(cards, pos, cr * rand(0.85, 1.35) * (tier === 3 ? 0.75 : 1), dir,
         clumpCol.clone().multiplyScalar(shade2), randInt(0, 3));
     }
   }
@@ -797,6 +812,80 @@ const midTrees = [];
       tree.userData = { swayAmp: rand(0.003, 0.008), swaySpeed: rand(0.3, 0.6), phase: rand(0, TAU) };
       midTrees.push(tree);
       scene.add(tree);
+    }
+  }
+}
+
+// ============================================================
+// LAYER 3 — CLOSE FRAMING FOREST
+// Hero trees entering from the left/right edges with roots and ferns at
+// their feet. The camera stands INSIDE the forest; the central ~40%
+// stays open as the creatures' stage.
+// ============================================================
+
+function xBound(z) { return frustumWidthAt(12.5 - z) / 2; }
+
+function makeGroundFern(s2) {
+  const cards = geoArrays();
+  const core = geoArrays();
+  const col0 = new THREE.Color(pick([0x4f9a55, 0x5faa62, 0x6fae57, 0x479366]));
+  blobInto(core, new THREE.Vector3(0, s2 * 0.16, 0), s2 * 0.22,
+    new THREE.Vector3(1.2, 0.7, 1.2), col0.clone().lerp(new THREE.Color(0x1d4a2e), 0.35));
+  const n = randInt(10, 16);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * TAU + rand(-0.25, 0.25);
+    const rr = s2 * rand(0.2, 0.42);
+    const dir = new THREE.Vector3(Math.cos(a) * 0.8, rand(0.5, 1.1), Math.sin(a) * 0.8).normalize();
+    cardInto(cards,
+      new THREE.Vector3(Math.cos(a) * rr, s2 * rand(0.14, 0.3), Math.sin(a) * rr),
+      s2 * rand(0.45, 0.75), dir,
+      col0.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.03, 0.05)).multiplyScalar(rand(0.85, 1.05)),
+      randInt(0, 3));
+  }
+  const g2 = new THREE.Group();
+  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
+  g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
+  return g2;
+}
+
+{
+  const place3 = (obj, x, z, amp) => {
+    obj.position.set(x, 0, z);
+    obj.userData = { swayAmp: amp, swaySpeed: rand(0.25, 0.5), phase: rand(0, TAU) };
+    midTrees.push(obj);
+    scene.add(obj);
+  };
+  for (const side of [-1, 1]) {
+    // very close edge tree — its trunk rises past the frame edge
+    const zA = rand(3.5, 6.5);
+    const xA = side * xBound(zA) * rand(0.85, 1.05);
+    const tA = makeTree3D(3);
+    tA.rotation.y = rand(0, TAU);
+    tA.rotation.z = -side * rand(0.02, 0.06); // leans gently over the clearing
+    place3(tA, xA, zA, rand(0.0015, 0.003));
+    // medium-close hero tree
+    const zB = rand(-2, 2);
+    const xB = side * xBound(zB) * rand(0.62, 0.88);
+    const tB = makeTree3D(3);
+    tB.rotation.y = rand(0, TAU);
+    place3(tB, xB, zB, rand(0.002, 0.004));
+    // secondary tree tucked behind the heroes
+    if (Math.random() < 0.85) {
+      const zC = rand(-8, -4);
+      const tC = makeTree3D(2);
+      tC.rotation.y = rand(0, TAU);
+      place3(tC, side * xBound(zC) * rand(0.5, 0.8), zC, rand(0.003, 0.006));
+    }
+    // ferns hugging the hero bases
+    for (let i = 0, fc = randInt(2, 4); i < fc; i++) {
+      const host = Math.random() < 0.5 ? { x: xA, z: zA } : { x: xB, z: zB };
+      const a = rand(0, TAU);
+      const fern = makeGroundFern(rand(0.9, 1.6));
+      fern.rotation.y = rand(0, TAU);
+      place3(fern,
+        host.x + Math.cos(a) * rand(0.9, 2.4),
+        host.z + Math.sin(a) * rand(0.6, 1.6) + 0.5,
+        rand(0.004, 0.008));
     }
   }
 }
