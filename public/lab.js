@@ -440,10 +440,11 @@ function addWind(mat, strength, heightK) {
           float sway = sin(uWTime * 1.1 + wpos.x * 0.35 + wpos.z * 0.5)
                      + 0.6 * sin(uWTime * 1.9 + wpos.x * 0.9 + wpos.y * 0.5);
           float flut = sin(uWTime * 4.6 + wpos.x * 2.8 + wpos.y * 2.1 + wpos.z * 1.9);
+          float flut2 = sin(uWTime * 6.4 + wpos.x * 7.3 + wpos.y * 5.9 + wpos.z * 6.1);
           float k = uWStr * uWGust * wh;
-          transformed.x += (sway * 0.06 + flut * 0.018) * k;
-          transformed.z += (sway * 0.04 + flut * 0.014) * k;
-          transformed.y += flut * 0.016 * k;
+          transformed.x += (sway * 0.06 + flut * 0.018 + flut2 * 0.012) * k;
+          transformed.z += (sway * 0.04 + flut * 0.014 + flut2 * 0.01) * k;
+          transformed.y += (flut * 0.016 + flut2 * 0.012) * k;
         }
       `);
   };
@@ -475,39 +476,104 @@ const barkTexture = (() => {
   return t;
 })();
 
-const leafMottleTexture = (() => {
-  const c = makeCanvas(128, 128);
+// 2x2 atlas of leaf sprigs — a twig with individual veined leaves
+const leafAtlasTexture = (() => {
+  const c = makeCanvas(512, 512);
   const g = c.getContext('2d');
-  g.fillStyle = '#e9efe4';
-  g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 700; i++) {
-    g.fillStyle = pick(['rgba(115,140,110,0.35)', 'rgba(210,225,195,0.4)', 'rgba(90,115,88,0.28)']);
+  const PAIRS = [['#2a6e3f', '#7fae4e'], ['#1f5c38', '#5f9a4a'], ['#35804c', '#a3c464'], ['#2a6444', '#6fa055']];
+  for (let v = 0; v < 4; v++) {
+    const ox = (v % 2) * 256, oy = (v > 1 ? 1 : 0) * 256;
+    g.save();
     g.beginPath();
-    g.ellipse(rand(0, 128), rand(0, 128), rand(1.5, 5), rand(1, 3), rand(0, TAU), 0, TAU);
-    g.fill();
+    g.rect(ox + 6, oy + 6, 244, 244);
+    g.clip();
+    g.translate(ox + 128, oy + 128);
+    g.strokeStyle = '#3d3226';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(-92, 62);
+    g.quadraticCurveTo(0, 12, 94, -42);
+    g.stroke();
+    const [c0, c1] = PAIRS[v];
+    for (let i = 0; i < 11; i++) {
+      const t = i / 10;
+      const bx = lerp(-88, 88, t);
+      const by = lerp(58, -38, t) - Math.sin(t * 3) * 6;
+      const ang = rand(-2.6, -0.5) + (i % 2 ? 1.9 : 0);
+      const L = rand(52, 88), W2 = rand(22, 35);
+      g.save();
+      g.translate(bx, by);
+      g.rotate(ang);
+      const grad = g.createLinearGradient(0, 0, L, 0);
+      grad.addColorStop(0, c0);
+      grad.addColorStop(1, c1);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.bezierCurveTo(L * 0.3, -W2, L * 0.75, -W2 * 0.6, L, 0);
+      g.bezierCurveTo(L * 0.75, W2 * 0.6, L * 0.3, W2, 0, 0);
+      g.fill();
+      g.strokeStyle = 'rgba(255,255,230,0.14)';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(4, 0);
+      g.lineTo(L - 6, 0);
+      g.stroke();
+      g.restore();
+    }
+    g.restore();
   }
-  const t = canvasTex(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(3, 3);
-  return t;
+  return canvasTex(c);
 })();
 
 const woodMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 1 });
-const leafMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: leafMottleTexture });
-addWind(leafMat, 0.55, 0.13);
+const coreMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
+const leafMat = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 1, map: leafAtlasTexture,
+  alphaTest: 0.35, side: THREE.DoubleSide,
+});
+addWind(leafMat, 0.9, 0.12);
+addWind(coreMat, 0.45, 0.12);
 addWind(woodMat, 0.1, 0.08);
 
 const LEAF_GREENS = [0x357d50, 0x469361, 0x2f6b46, 0x5f8743, 0x74a05a, 0x3e8258];
 
 function geoArrays() { return { pos: [], norm: [], uv: [], col: [], idx: [] }; }
-function buildGeo(A, withColor) {
+function buildGeo(A) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(A.pos, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(A.norm, 3));
-  if (withColor) geo.setAttribute('color', new THREE.Float32BufferAttribute(A.col, 3));
-  else geo.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
+  if (A.uv.length) geo.setAttribute('uv', new THREE.Float32BufferAttribute(A.uv, 2));
+  if (A.col.length) geo.setAttribute('color', new THREE.Float32BufferAttribute(A.col, 3));
   geo.setIndex(A.idx);
   return geo;
+}
+
+// one leaf-sprig card: mostly tangent to the clump surface, lit outward
+function cardInto(A, center, size, outward, color, variant) {
+  const n = outward.clone()
+    .add(new THREE.Vector3(rand(-0.7, 0.7), rand(-0.7, 0.7), rand(-0.7, 0.7)))
+    .normalize();
+  const ref = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+  const t1 = new THREE.Vector3().crossVectors(n, ref).normalize();
+  const t2 = new THREE.Vector3().crossVectors(n, t1);
+  const rot = rand(0, TAU);
+  const c1 = t1.clone().multiplyScalar(Math.cos(rot)).addScaledVector(t2, Math.sin(rot));
+  const c2 = new THREE.Vector3().crossVectors(n, c1);
+  const h = size / 2;
+  const start = A.pos.length / 3;
+  const u0 = (variant % 2) * 0.5, v0 = (variant > 1 ? 0.5 : 0);
+  const corners = [[-h, -h, u0, v0], [h, -h, u0 + 0.5, v0], [-h, h, u0, v0 + 0.5], [h, h, u0 + 0.5, v0 + 0.5]];
+  for (const [a2, b2, uu, vv] of corners) {
+    A.pos.push(
+      center.x + c1.x * a2 + c2.x * b2,
+      center.y + c1.y * a2 + c2.y * b2,
+      center.z + c1.z * a2 + c2.z * b2);
+    A.norm.push(outward.x, outward.y, outward.z);
+    A.uv.push(uu, vv);
+    A.col.push(color.r, color.g, color.b);
+  }
+  A.idx.push(start, start + 1, start + 2, start + 1, start + 3, start + 2);
 }
 
 // sweep a tapering tube along points (parallel-transport frames) — trunks & branches
@@ -588,7 +654,8 @@ function makeTree3D(tier) {
   const H = [rand(4.8, 7), rand(8, 11), rand(10.5, 13.5)][tier];
   const R0 = H * 0.022 * rand(0.8, 1.3) + 0.05;
   const wood = geoArrays();
-  const leaves = geoArrays();
+  const core = geoArrays();
+  const cards = geoArrays();
 
   // trunk: curved, tapering, leaning its own way
   const leanA = rand(0, TAU);
@@ -665,26 +732,34 @@ function makeTree3D(tier) {
   for (let i = 0; i < 3; i++) {
     clumps.push(crownC.clone().add(new THREE.Vector3(rand(-0.2, 0.2) * H, rand(-0.06, 0.12) * H, rand(-0.2, 0.2) * H)));
   }
+  const cardsPerClump = [28, 50, 70][tier];
   for (const cc of clumps) {
     const clumpCol = new THREE.Color(pick(LEAF_GREENS))
       .offsetHSL(rand(-0.015, 0.015), rand(-0.05, 0.05), rand(-0.04, 0.03))
       .lerp(HAZE, hazeMix);
-    const cr = H * rand(0.062, 0.112);
-    for (let b = 0, nB = randInt(3, 5); b < nB; b++) {
-      blobInto(leaves,
-        cc.clone().add(new THREE.Vector3(rand(-cr, cr) * 1.2, rand(-cr, cr) * 0.8, rand(-cr, cr) * 1.2)),
-        cr * rand(0.75, 1.15),
-        new THREE.Vector3(rand(0.8, 1.4), rand(0.55, 0.95), rand(0.8, 1.4)),
-        clumpCol.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.025, 0.025)));
+    const cr = H * rand(0.07, 0.12);
+    // dark shadowed heart of the clump
+    blobInto(core, cc, cr * 0.85,
+      new THREE.Vector3(rand(0.9, 1.3), rand(0.6, 0.9), rand(0.9, 1.3)),
+      clumpCol.clone().lerp(new THREE.Color(0x123322), 0.3));
+    // individual leaf sprigs on the shell — every one flutters on its own
+    const nCards = Math.round(cardsPerClump * rand(0.8, 1.25));
+    for (let i2 = 0; i2 < nCards; i2++) {
+      const dir = new THREE.Vector3().randomDirection();
+      dir.y *= 0.75;
+      dir.normalize();
+      const pos = cc.clone().addScaledVector(dir, cr * rand(0.55, 1.05));
+      const shade2 = clamp(0.88 + dir.y * 0.2 + rand(-0.05, 0.05), 0.66, 1.1);
+      cardInto(cards, pos, cr * rand(0.85, 1.35), dir,
+        clumpCol.clone().multiplyScalar(shade2), randInt(0, 3));
     }
   }
 
-  const woodMesh = new THREE.Mesh(buildGeo(wood, false), woodMat);
+  const woodMesh = new THREE.Mesh(buildGeo(wood), woodMat);
   woodMesh.castShadow = false; // shadows return with the real ground layer
   g2.add(woodMesh);
-  const leafMesh = new THREE.Mesh(buildGeo(leaves, true), leafMat);
-  leafMesh.castShadow = false;
-  g2.add(leafMesh);
+  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
+  g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
   return g2;
 }
 
