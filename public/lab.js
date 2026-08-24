@@ -123,7 +123,7 @@ sun.shadow.bias = -0.0015;
 scene.add(sun);
 // soft fill from behind the camera so camera-facing foliage never goes murky
 const fill = new THREE.DirectionalLight(0xd8f2dc, 0.9);
-fill.position.set(-6, 9, 22);
+fill.position.set(0, 9, 24); // centered so left/right trunks get equal frontal light
 scene.add(fill);
 
 // ---- painterly distance layers (painted canvases on soft billboards) ----
