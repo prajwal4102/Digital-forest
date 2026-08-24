@@ -132,6 +132,7 @@ scene.add(fill);
 // them — their haze is painted in, mixed toward the horizon color.
 
 const HAZE = new THREE.Color(0xe9efc6); // what "far away" fades into
+const proceduralBG = []; // hidden when hand-painted plates are provided
 
 function paintSilhouette({ w = 4096, h = 400, blur, color, haze, kind }) {
   // draw sharp shapes first; blur ONCE at the end (per-draw blur is way too slow)
@@ -288,10 +289,12 @@ function distanceLayer(opts, z, worldW, worldH, yBottom) {
 
 // farthest → nearest: soft blue-green far away, rich green up close —
 // every band clearly readable, haze kept light so nothing gets buried
-distanceLayer({ kind: 'hills', blur: 6, color: 0x7aa89b, haze: 0.32 }, -120, 320, 34, -4);
-distanceLayer({ kind: 'hills', blur: 5, color: 0x649472, haze: 0.2 }, -100, 270, 26, -3.5);
-distanceLayer({ kind: 'treeline', blur: 3, color: 0x487e58, haze: 0.08 }, -80, 220, 18, -2.5);
-distanceLayer({ kind: 'clusters', blur: 1.5, color: 0x2f6a44, haze: 0 }, -62, 170, 15, -1.8);
+proceduralBG.push(
+  distanceLayer({ kind: 'hills', blur: 6, color: 0x7aa89b, haze: 0.32 }, -120, 320, 34, -4),
+  distanceLayer({ kind: 'hills', blur: 5, color: 0x649472, haze: 0.2 }, -100, 270, 26, -3.5),
+  distanceLayer({ kind: 'treeline', blur: 3, color: 0x487e58, haze: 0.08 }, -80, 220, 18, -2.5),
+  distanceLayer({ kind: 'clusters', blur: 1.5, color: 0x2f6a44, haze: 0 }, -62, 170, 15, -1.8),
+);
 
 // ---- soft clouds drifting across the sky ----
 const clouds = [];
@@ -322,6 +325,7 @@ const clouds = [];
     m.position.set(rand(-25, 25), y, z);
     m.userData.speed = rand(0.12, 0.28);
     clouds.push(m);
+    proceduralBG.push(m);
     scene.add(m);
   };
   makeCloudPlane(-150, 48, 420, 0.5);
@@ -357,6 +361,7 @@ const mists = [];
     m.position.set(rand(-10, 10), y, z);
     m.userData = { baseX: m.position.x, speed: rand(0.008, 0.02), phase: rand(0, TAU) };
     mists.push(m);
+    proceduralBG.push(m);
     scene.add(m);
   }
 }
@@ -370,6 +375,7 @@ const mists = [];
   }));
   halo.scale.setScalar(70);
   halo.position.copy(sunAnchor);
+  proceduralBG.push(halo);
   scene.add(halo);
   const disc = new THREE.Sprite(new THREE.SpriteMaterial({
     map: radialTex(256, [
@@ -380,6 +386,7 @@ const mists = [];
   }));
   disc.scale.setScalar(22);
   disc.position.copy(sunAnchor);
+  proceduralBG.push(disc);
   scene.add(disc);
 }
 
@@ -707,6 +714,58 @@ const midTrees = [];
     }
   }
 }
+
+// ============================================================
+// HAND-PAINTED PLATES (optional, highest quality)
+// Drop generated layer images into public/layers/ and they replace the
+// procedural stand-ins automatically:
+//   layers/layer1.png (or .jpg) — full background: sky, sun, distant forest (opaque)
+//   layers/layer2.png           — mid-distance trees (TRUE transparent PNG)
+// The plates keep parallax, and layer2's canopy sways in the wind shader.
+// ============================================================
+const texLoader = new THREE.TextureLoader();
+function tryPlate(url) {
+  return new Promise((res) => texLoader.load(url,
+    (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; res(t); },
+    undefined, () => res(null)));
+}
+function frustumWidthAt(dist) {
+  return 2 * Math.tan((camera.fov * Math.PI / 180) / 2) * camera.aspect * dist;
+}
+(async () => {
+  const p1 = (await tryPlate('layers/layer1.png')) || (await tryPlate('layers/layer1.jpg'));
+  const p2 = await tryPlate('layers/layer2.png');
+  const tag = document.getElementById('tag');
+  if (p1) {
+    for (const o of proceduralBG) o.visible = false;
+    const dist = 100, z = 12.5 - dist;
+    const w = frustumWidthAt(dist) * 1.06;
+    const h = w * (p1.image.height / p1.image.width);
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, h),
+      new THREE.MeshBasicMaterial({ map: p1, depthWrite: false, fog: false }),
+    );
+    m.position.set(0, h / 2 - 9, z); // horizon lands near eye level
+    scene.add(m);
+  }
+  if (p2) {
+    for (const tr of midTrees) tr.visible = false;
+    const dist = 34, z = 12.5 - dist;
+    const w = frustumWidthAt(dist) * 1.04;
+    const h = w * (p2.image.height / p2.image.width);
+    const mat = new THREE.MeshBasicMaterial({
+      map: p2, transparent: true, alphaTest: 0.02, depthWrite: false, fog: false,
+    });
+    addWind(mat, 0.4, 0.12); // painted canopies breathe
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 48, 24), mat);
+    m.position.set(0, h / 2 - 0.4, z); // tree bases sit at stage level
+    scene.add(m);
+  }
+  if (p1 || p2) {
+    tag.textContent = 'lab · painted plates: ' +
+      (p1 ? 'L1 ✓ ' : 'L1 — ') + (p2 ? 'L2 ✓' : 'L2 —');
+  }
+})();
 
 // ---------- loop ----------
 const clock = new THREE.Clock();
