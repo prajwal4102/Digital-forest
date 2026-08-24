@@ -690,22 +690,8 @@ function makeTree3D(tier) {
       t * trunkTopY,
       Math.sin(leanA) * (leanM * t * t) + Math.sin(leanA + 1.7) * bow));
   }
-  tubeInto(wood, pts, R0, R0 * 0.42, 10, R0 * 0.8);
-  if (tier === 3) {
-    // slim exposed roots easing from the trunk into the ground
-    const nR = randInt(4, 6);
-    for (let k = 0; k < nR; k++) {
-      const a = (k / nR) * TAU + rand(-0.4, 0.4);
-      const dx = Math.cos(a), dz = Math.sin(a);
-      const ext = R0 * rand(2.2, 2.8);
-      tubeInto(wood, [
-        new THREE.Vector3(dx * R0 * 0.2, R0 * 1.1, dz * R0 * 0.2),
-        new THREE.Vector3(dx * R0 * 0.9, R0 * 0.55, dz * R0 * 0.9),
-        new THREE.Vector3(dx * R0 * 1.6, R0 * 0.18, dz * R0 * 1.6),
-        new THREE.Vector3(dx * ext, 0.03, dz * ext),
-      ], R0 * 0.24, R0 * 0.04, 5);
-    }
-  }
+  tubeInto(wood, pts, R0, R0 * 0.42, 10, R0 * (tier === 3 ? 1.15 : 0.8));
+  // (exposed roots removed — they return embedded in the real ground layer)
 
   const trunkPoint = (t) => {
     const i = t * 6;
