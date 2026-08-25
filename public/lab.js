@@ -747,7 +747,7 @@ function makeTree3D(tier) {
   for (let i = 0; i < (tier === 3 ? 5 : 3); i++) {
     clumps.push(crownC.clone().add(new THREE.Vector3(rand(-0.2, 0.2) * H, rand(-0.06, 0.12) * H, rand(-0.2, 0.2) * H)));
   }
-  const cardsPerClump = [28, 50, 70, 88][tier];
+  const cardsPerClump = [36, 64, 88, 110][tier];
   for (const cc of clumps) {
     const clumpCol = new THREE.Color(pick(LEAF_GREENS))
       .offsetHSL(rand(-0.015, 0.015), rand(-0.04, 0.04), rand(-0.015, 0.045))
@@ -825,7 +825,7 @@ function makeGroundFern(s2) {
       s2 * rand(0.25, 0.35), new THREE.Vector3(Math.cos(a), 0.6, Math.sin(a)).normalize(),
       col0.clone().lerp(new THREE.Color(0x12301e), 0.5), randInt(0, 3));
   }
-  const n = randInt(10, 16);
+  const n = randInt(18, 26);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU + rand(-0.25, 0.25);
     const rr = s2 * rand(0.2, 0.42);
@@ -972,7 +972,7 @@ function makeBush(s2) {
   const cards = geoArrays();
   const base = new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.03));
   // the interior is deep-shadow LEAVES, not a solid mass
-  for (let i = 0, n = randInt(24, 34); i < n; i++) {
+  for (let i = 0, n = randInt(36, 48); i < n; i++) {
     const dir = new THREE.Vector3().randomDirection();
     dir.y = Math.abs(dir.y) * 0.7 + 0.1;
     dir.normalize();
@@ -984,21 +984,21 @@ function makeBush(s2) {
       base.clone().lerp(new THREE.Color(0x12301e), 0.55), randInt(0, 3));
   }
   // skirt of leaves around the base so the core never shows underneath
-  for (let i = 0, n = randInt(26, 38); i < n; i++) {
+  for (let i = 0, n = randInt(42, 58); i < n; i++) {
     const a = rand(0, TAU);
     const dir = new THREE.Vector3(Math.cos(a), rand(0.12, 0.35), Math.sin(a)).normalize();
     cardInto(cards, new THREE.Vector3(Math.cos(a) * s2 * rand(0.34, 0.55), s2 * rand(0.05, 0.16), Math.sin(a) * s2 * rand(0.34, 0.55)),
       s2 * rand(0.18, 0.28), dir,
       base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.03, 0)).multiplyScalar(rand(0.8, 0.95)), randInt(0, 3));
   }
-  for (let i = 0, n = randInt(95, 135); i < n; i++) {
+  for (let i = 0, n = randInt(150, 200); i < n; i++) {
     const dir = new THREE.Vector3().randomDirection();
     dir.y = Math.abs(dir.y) * 0.65 + 0.08; // cover the sides too, not just the top
     dir.normalize();
     const pos = new THREE.Vector3(
-      dir.x * s2 * rand(0.32, 0.58),
-      s2 * 0.24 + dir.y * s2 * rand(0.16, 0.4),
-      dir.z * s2 * rand(0.32, 0.58));
+      dir.x * s2 * rand(0.28, 0.52),
+      s2 * 0.24 + dir.y * s2 * rand(0.14, 0.36),
+      dir.z * s2 * rand(0.28, 0.52));
     const shade2 = clamp(0.9 + dir.y * 0.18 + rand(-0.05, 0.05), 0.75, 1.1);
     cardInto(cards, pos, s2 * rand(0.18, 0.3), dir,
       base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.02)).multiplyScalar(shade2), randInt(0, 3));
@@ -1087,7 +1087,7 @@ function makeVine(len) {
     // big soft leaves brushing the extreme corner of the frame
     const cornerCards = geoArrays();
     const colC = new THREE.Color(pick(LEAF_GREENS)).multiplyScalar(0.9);
-    for (let i = 0, n = randInt(6, 10); i < n; i++) {
+    for (let i = 0, n = randInt(12, 18); i < n; i++) {
       cardInto(cornerCards, new THREE.Vector3(rand(-0.8, 0.8), rand(-0.6, 0.6), rand(-0.3, 0.3)),
         rand(0.22, 0.4),
         new THREE.Vector3(rand(-0.4, 0.4), rand(0.4, 1), 1).normalize(),
