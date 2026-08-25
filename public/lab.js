@@ -968,20 +968,28 @@ function makeBush(s2) {
   const cards = geoArrays();
   const base = new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.03));
   for (let i = 0, n = randInt(2, 3); i < n; i++) {
-    blobInto(core, new THREE.Vector3(rand(-0.3, 0.3) * s2, s2 * rand(0.25, 0.4), rand(-0.3, 0.3) * s2),
-      s2 * rand(0.35, 0.5), new THREE.Vector3(1.15, 0.75, 1.15),
-      base.clone().lerp(new THREE.Color(0x1d4a2e), 0.25));
+    blobInto(core, new THREE.Vector3(rand(-0.22, 0.22) * s2, s2 * rand(0.1, 0.18), rand(-0.22, 0.22) * s2),
+      s2 * rand(0.22, 0.3), new THREE.Vector3(1.15, 0.5, 1.15),
+      base.clone().lerp(new THREE.Color(0x142e1d), 0.5)); // deep shadow core, stays hidden
   }
-  for (let i = 0, n = randInt(55, 85); i < n; i++) {
+  // skirt of leaves around the base so the core never shows underneath
+  for (let i = 0, n = randInt(26, 38); i < n; i++) {
+    const a = rand(0, TAU);
+    const dir = new THREE.Vector3(Math.cos(a), rand(0.12, 0.35), Math.sin(a)).normalize();
+    cardInto(cards, new THREE.Vector3(Math.cos(a) * s2 * rand(0.34, 0.55), s2 * rand(0.05, 0.16), Math.sin(a) * s2 * rand(0.34, 0.55)),
+      s2 * rand(0.18, 0.28), dir,
+      base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.03, 0)).multiplyScalar(rand(0.8, 0.95)), randInt(0, 3));
+  }
+  for (let i = 0, n = randInt(95, 135); i < n; i++) {
     const dir = new THREE.Vector3().randomDirection();
-    dir.y = Math.abs(dir.y) * 0.9 + 0.15; // dome: leaves face up and out
+    dir.y = Math.abs(dir.y) * 0.65 + 0.08; // cover the sides too, not just the top
     dir.normalize();
     const pos = new THREE.Vector3(
-      dir.x * s2 * rand(0.3, 0.62),
-      s2 * 0.3 + dir.y * s2 * rand(0.2, 0.45),
-      dir.z * s2 * rand(0.3, 0.62));
+      dir.x * s2 * rand(0.32, 0.58),
+      s2 * 0.24 + dir.y * s2 * rand(0.16, 0.4),
+      dir.z * s2 * rand(0.32, 0.58));
     const shade2 = clamp(0.9 + dir.y * 0.18 + rand(-0.05, 0.05), 0.75, 1.1);
-    cardInto(cards, pos, s2 * rand(0.28, 0.45), dir,
+    cardInto(cards, pos, s2 * rand(0.18, 0.3), dir,
       base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.02)).multiplyScalar(shade2), randInt(0, 3));
   }
   const g2 = new THREE.Group();
@@ -1048,7 +1056,7 @@ function makeVine(len) {
       const zr = rand(2, 7.5);
       const g2 = new THREE.Group();
       place4(g2, side * xBound(zr) * rand(0.55, 0.9), zr, 0);
-      rockSpots.push({ g: g2, s: rand(0.16, 0.45) });
+      rockSpots.push({ g: g2, s: rand(0.11, 0.26) });
     }
     // one modest fallen branch
     if (Math.random() < 0.8) {
@@ -1069,13 +1077,13 @@ function makeVine(len) {
     // big soft leaves brushing the extreme corner of the frame
     const cornerCards = geoArrays();
     const colC = new THREE.Color(pick(LEAF_GREENS)).multiplyScalar(0.9);
-    for (let i = 0, n = randInt(3, 6); i < n; i++) {
-      cardInto(cornerCards, new THREE.Vector3(rand(-0.6, 0.6), rand(-0.5, 0.5), rand(-0.3, 0.3)),
-        rand(0.7, 1.2),
+    for (let i = 0, n = randInt(6, 10); i < n; i++) {
+      cardInto(cornerCards, new THREE.Vector3(rand(-0.8, 0.8), rand(-0.6, 0.6), rand(-0.3, 0.3)),
+        rand(0.22, 0.4),
         new THREE.Vector3(rand(-0.4, 0.4), rand(0.4, 1), 1).normalize(),
         colC.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.04, 0.04)), randInt(0, 3));
     }
-    const zc = rand(9.6, 10.4);
+    const zc = rand(8.4, 9.2);
     const cm = new THREE.Mesh(buildGeo(cornerCards), leafMat);
     place4(cm, side * xBound(zc) * rand(0.78, 0.95), zc, rand(0.008, 0.014));
     cm.position.y = Math.random() < 0.5 ? rand(0.2, 0.8) : rand(5.5, 6.5);
@@ -1111,7 +1119,7 @@ function makeVine(len) {
     m.rotation.y = rand(0, TAU);
     m.position.set(
       -(bb.min.x + bb.max.x) / 2 * k,
-      -bb.min.y * k - spot.s * 0.12, // settled slightly into the ground line
+      -bb.min.y * k - spot.s * 0.3, // settled well into the ground line
       -(bb.min.z + bb.max.z) / 2 * k);
     spot.g.add(m);
   }
