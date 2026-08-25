@@ -817,10 +817,14 @@ const heroBases = [];
 
 function makeGroundFern(s2) {
   const cards = geoArrays();
-  const core = geoArrays();
   const col0 = new THREE.Color(pick([0x4f9a55, 0x5faa62, 0x6fae57, 0x479366]));
-  blobInto(core, new THREE.Vector3(0, s2 * 0.16, 0), s2 * 0.22,
-    new THREE.Vector3(1.2, 0.7, 1.2), col0.clone().lerp(new THREE.Color(0x1d4a2e), 0.35));
+  // dark heart made of leaves, not a blob
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * TAU;
+    cardInto(cards, new THREE.Vector3(Math.cos(a) * s2 * 0.12, s2 * rand(0.08, 0.18), Math.sin(a) * s2 * 0.12),
+      s2 * rand(0.25, 0.35), new THREE.Vector3(Math.cos(a), 0.6, Math.sin(a)).normalize(),
+      col0.clone().lerp(new THREE.Color(0x12301e), 0.5), randInt(0, 3));
+  }
   const n = randInt(10, 16);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU + rand(-0.25, 0.25);
@@ -833,7 +837,6 @@ function makeGroundFern(s2) {
       randInt(0, 3));
   }
   const g2 = new THREE.Group();
-  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
   g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
   return g2;
 }
@@ -958,21 +961,27 @@ function makeMossPatch(s2) {
   const A = geoArrays();
   const col = new THREE.Color(0x557f3d);
   for (let i = 0, n = randInt(2, 4); i < n; i++) {
-    blobInto(A, new THREE.Vector3(rand(-s2, s2) * 0.5, 0.04, rand(-s2, s2) * 0.5), s2 * rand(0.3, 0.5),
-      new THREE.Vector3(1.3, 0.4, 1.3), col.clone().offsetHSL(0, rand(-0.05, 0.05), rand(-0.04, 0.04)));
+    blobInto(A, new THREE.Vector3(rand(-s2, s2) * 0.5, 0.02, rand(-s2, s2) * 0.5), s2 * rand(0.22, 0.36),
+      new THREE.Vector3(1.5, 0.18, 1.5), col.clone().offsetHSL(0, rand(-0.05, 0.05), rand(-0.06, 0)));
   }
   return new THREE.Mesh(buildGeo(A), coreMat);
 }
 
 // a dense, dome-shaped shrub built from the same leaf sprigs as the trees
 function makeBush(s2) {
-  const core = geoArrays();
   const cards = geoArrays();
   const base = new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.03));
-  for (let i = 0, n = randInt(2, 3); i < n; i++) {
-    blobInto(core, new THREE.Vector3(rand(-0.22, 0.22) * s2, s2 * rand(0.1, 0.18), rand(-0.22, 0.22) * s2),
-      s2 * rand(0.22, 0.3), new THREE.Vector3(1.15, 0.5, 1.15),
-      base.clone().lerp(new THREE.Color(0x142e1d), 0.5)); // deep shadow core, stays hidden
+  // the interior is deep-shadow LEAVES, not a solid mass
+  for (let i = 0, n = randInt(24, 34); i < n; i++) {
+    const dir = new THREE.Vector3().randomDirection();
+    dir.y = Math.abs(dir.y) * 0.7 + 0.1;
+    dir.normalize();
+    cardInto(cards, new THREE.Vector3(
+      dir.x * s2 * rand(0.06, 0.3),
+      s2 * 0.16 + dir.y * s2 * rand(0.04, 0.24),
+      dir.z * s2 * rand(0.06, 0.3)),
+      s2 * rand(0.2, 0.3), dir,
+      base.clone().lerp(new THREE.Color(0x12301e), 0.55), randInt(0, 3));
   }
   // skirt of leaves around the base so the core never shows underneath
   for (let i = 0, n = randInt(26, 38); i < n; i++) {
@@ -995,7 +1004,6 @@ function makeBush(s2) {
       base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.02)).multiplyScalar(shade2), randInt(0, 3));
   }
   const g2 = new THREE.Group();
-  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
   g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
   return g2;
 }
