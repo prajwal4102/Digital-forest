@@ -112,8 +112,8 @@ scene.fog = new THREE.FogExp2(0xbcd9c2, 0.009);
 // ---- lighting (soft, warm, storybook daylight) ----
 scene.add(new THREE.HemisphereLight(0xcfe6f2, 0x55795a, 1.2));
 scene.add(new THREE.AmbientLight(0x86b088, 0.55));
-const sun = new THREE.DirectionalLight(0xfff0c2, 1.15);
-sun.position.copy(SUN_DIR).multiplyScalar(40);
+const sun = new THREE.DirectionalLight(0xfff0c2, 1.6);
+sun.position.set(0, 15, -31); // zero sideways lean: left and right lit identically
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -24; sun.shadow.camera.right = 24;
@@ -122,7 +122,7 @@ sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
 sun.shadow.bias = -0.0015;
 scene.add(sun);
 // soft fill from behind the camera so camera-facing foliage never goes murky
-const fill = new THREE.DirectionalLight(0xd8f2dc, 1.2);
+const fill = new THREE.DirectionalLight(0xd8f2dc, 0.9);
 fill.position.set(0, 9, 24); // centered so left/right trunks get equal frontal light
 scene.add(fill);
 
@@ -543,7 +543,7 @@ const leafAtlasTexture = (() => {
   return canvasTex(c);
 })();
 
-const woodMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 1, color: 0xb4a28e });
+const woodMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 1 });
 const coreMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
 const leafMat = new THREE.MeshStandardMaterial({
   vertexColors: true, roughness: 1, map: leafAtlasTexture,
