@@ -810,6 +810,7 @@ const midTrees = [];
 // ============================================================
 
 function xBound(z) { return frustumWidthAt(12.5 - z) / 2; }
+const heroBases = [];
 
 function makeGroundFern(s2) {
   const cards = geoArrays();
@@ -855,6 +856,7 @@ function makeGroundFern(s2) {
     const tB = makeTree3D(3);
     tB.rotation.y = rand(0, TAU);
     place3(tB, xB, zB, rand(0.002, 0.004));
+    heroBases.push({ x: xA, z: zA }, { x: xB, z: zB });
     // secondary tree tucked behind the heroes
     if (Math.random() < 0.85) {
       const zC = rand(-8, -4);
@@ -873,6 +875,175 @@ function makeGroundFern(s2) {
         host.z + Math.sin(a) * rand(0.6, 1.6) + 0.5,
         rand(0.004, 0.008));
     }
+  }
+}
+
+// ============================================================
+// LAYER 4 — FOREGROUND ENVIRONMENTAL DETAILS
+// Ferns, wild grass, moss, small rocks, fallen branches, hanging vines and
+// near-camera leaves — concentrated at the edges and around the hero-tree
+// bases. The central stage stays clean and calm.
+// ============================================================
+
+const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide });
+addWind(grassMat, 1.1, 1.4);
+const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a927c, roughness: 1, flatShading: true });
+
+function makeGrassTuft(s2) {
+  const A = geoArrays();
+  const col = new THREE.Color(pick([0x5f9a4a, 0x6fae57, 0x7fae63, 0x55904a]));
+  const n = randInt(8, 14);
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU);
+    const lean = rand(0.15, 0.55);
+    const dx = Math.cos(a) * lean, dz = Math.sin(a) * lean;
+    const hgt = s2 * rand(0.5, 1);
+    const w = s2 * rand(0.035, 0.06);
+    const bx = rand(-s2, s2) * 0.25, bz = rand(-s2, s2) * 0.25;
+    const px = -Math.sin(a), pz = Math.cos(a);
+    const start = A.pos.length / 3;
+    const c = col.clone().multiplyScalar(rand(0.85, 1.1));
+    const verts = [
+      [bx - px * w, 0, bz - pz * w],
+      [bx + px * w, 0, bz + pz * w],
+      [bx - px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz - pz * w * 0.5 + dz * hgt * 0.6],
+      [bx + px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz + pz * w * 0.5 + dz * hgt * 0.6],
+      [bx + dx * hgt, hgt, bz + dz * hgt],
+    ];
+    for (const [X, Y, Z] of verts) {
+      const sh = 0.7 + (Y / hgt) * 0.4; // brighter toward the tip
+      A.pos.push(X, Y, Z);
+      A.norm.push(0, 0.45, 0.89);
+      A.col.push(c.r * sh, c.g * sh, c.b * sh);
+    }
+    A.idx.push(start, start + 1, start + 2, start + 1, start + 3, start + 2, start + 2, start + 3, start + 4);
+  }
+  return new THREE.Mesh(buildGeo(A), grassMat);
+}
+
+function makeRock(s2) {
+  const geo = new THREE.SphereGeometry(s2, 7, 6);
+  const p = geo.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(i, p.getX(i) * rand(0.82, 1.18), p.getY(i) * rand(0.5, 0.75), p.getZ(i) * rand(0.82, 1.18));
+  }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, rockMat);
+  m.position.y = s2 * 0.32;
+  m.rotation.y = rand(0, TAU);
+  return m;
+}
+
+function makeFallenBranch(len) {
+  const A = geoArrays();
+  const pts = [];
+  const bend = rand(-0.15, 0.15);
+  for (let i = 0; i <= 5; i++) {
+    const t = i / 5;
+    pts.push(new THREE.Vector3(t * len - len / 2, 0.06 + Math.sin(t * Math.PI) * bend * 0.3, Math.sin(t * 2.2) * 0.08));
+  }
+  tubeInto(A, pts, rand(0.07, 0.1), 0.02, 6);
+  const s0 = pts[randInt(1, 3)].clone();
+  tubeInto(A, [s0, s0.clone().add(new THREE.Vector3(rand(-0.2, 0.2), rand(0.15, 0.3), rand(-0.2, 0.2)))], 0.03, 0.01, 4);
+  const m = new THREE.Mesh(buildGeo(A), woodMat);
+  m.rotation.y = rand(0, TAU);
+  return m;
+}
+
+function makeMossPatch(s2) {
+  const A = geoArrays();
+  const col = new THREE.Color(0x557f3d);
+  for (let i = 0, n = randInt(2, 4); i < n; i++) {
+    blobInto(A, new THREE.Vector3(rand(-s2, s2) * 0.5, 0.04, rand(-s2, s2) * 0.5), s2 * rand(0.3, 0.5),
+      new THREE.Vector3(1.3, 0.4, 1.3), col.clone().offsetHSL(0, rand(-0.05, 0.05), rand(-0.04, 0.04)));
+  }
+  return new THREE.Mesh(buildGeo(A), coreMat);
+}
+
+function makeVine(len) {
+  const g2 = new THREE.Group(); // pivot at the top anchor so it can swing
+  const wood2 = geoArrays();
+  const cards = geoArrays();
+  const pts = [];
+  const N = 8;
+  const sway1 = rand(-0.6, 0.6), sway2 = rand(-0.5, 0.5);
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    pts.push(new THREE.Vector3(
+      Math.sin(t * Math.PI) * sway1 + t * sway2,
+      -t * len,
+      Math.sin(t * Math.PI * 0.7) * 0.2));
+  }
+  tubeInto(wood2, pts, 0.045, 0.018, 5);
+  const col = new THREE.Color(pick(LEAF_GREENS));
+  for (let i = 1; i <= N; i++) {
+    if (Math.random() < 0.75) {
+      cardInto(cards, pts[i].clone().add(new THREE.Vector3(rand(-0.15, 0.15), 0, rand(-0.15, 0.15))),
+        rand(0.35, 0.6),
+        new THREE.Vector3(rand(-1, 1), rand(-0.3, 0.6), rand(-1, 1)).normalize(),
+        col.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.03, 0.04)), randInt(0, 3));
+    }
+  }
+  g2.add(new THREE.Mesh(buildGeo(wood2), woodMat));
+  g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
+  return g2;
+}
+
+{
+  const place4 = (obj, x, z, amp) => {
+    obj.position.x = x;
+    obj.position.z = z;
+    if (amp) {
+      obj.userData = { swayAmp: amp, swaySpeed: rand(0.3, 0.7), phase: rand(0, TAU) };
+      midTrees.push(obj);
+    }
+    scene.add(obj);
+  };
+  for (const side of [-1, 1]) {
+    const heroes = heroBases.filter(h => Math.sign(h.x) === side);
+    const anyHero = heroes[0] || { x: side * 8, z: 4 };
+    // lush fern cluster entering the lower corner
+    const zf = rand(7.5, 9);
+    place4(makeGroundFern(rand(1.6, 2.4)), side * xBound(zf) * rand(0.6, 0.88), zf, rand(0.006, 0.01));
+    // wild grass around the hero bases
+    for (let i = 0, n = randInt(3, 5); i < n; i++) {
+      const hb = pick(heroes) || anyHero;
+      place4(makeGrassTuft(rand(0.35, 0.6)), hb.x + rand(-1.8, 1.8), hb.z + rand(-0.8, 1.6), 0);
+    }
+    // a few small rocks
+    for (let i = 0, n = randInt(1, 3); i < n; i++) {
+      const zr = rand(2, 7);
+      place4(makeRock(rand(0.14, 0.38)), side * xBound(zr) * rand(0.55, 0.9), zr, 0);
+    }
+    // one modest fallen branch
+    if (Math.random() < 0.8) {
+      const zb = rand(4, 7.5);
+      place4(makeFallenBranch(rand(1.2, 2.2)), side * xBound(zb) * rand(0.6, 0.85), zb, 0);
+    }
+    // moss hugging the hero roots
+    for (const hb of heroes) {
+      if (Math.random() < 0.8) place4(makeMossPatch(rand(0.5, 0.9)), hb.x + rand(-0.6, 0.6), hb.z + rand(0.3, 0.9), 0);
+    }
+    // hanging vines from the upper edges
+    for (let i = 0, n = randInt(1, 2); i < n; i++) {
+      const zv = rand(1, 5);
+      const v = makeVine(rand(3.2, 5.5));
+      place4(v, side * xBound(zv) * rand(0.5, 0.85), zv, rand(0.015, 0.035));
+      v.position.y = rand(7.5, 9.5);
+    }
+    // big soft leaves brushing the extreme corner of the frame
+    const cornerCards = geoArrays();
+    const colC = new THREE.Color(pick(LEAF_GREENS)).multiplyScalar(0.9);
+    for (let i = 0, n = randInt(3, 6); i < n; i++) {
+      cardInto(cornerCards, new THREE.Vector3(rand(-0.6, 0.6), rand(-0.5, 0.5), rand(-0.3, 0.3)),
+        rand(0.7, 1.2),
+        new THREE.Vector3(rand(-0.4, 0.4), rand(0.4, 1), 1).normalize(),
+        colC.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.04, 0.04)), randInt(0, 3));
+    }
+    const zc = rand(9.6, 10.4);
+    const cm = new THREE.Mesh(buildGeo(cornerCards), leafMat);
+    place4(cm, side * xBound(zc) * rand(0.78, 0.95), zc, rand(0.008, 0.014));
+    cm.position.y = Math.random() < 0.5 ? rand(0.2, 0.8) : rand(5.5, 6.5);
   }
 }
 
