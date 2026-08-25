@@ -704,7 +704,7 @@ function makeTree3D(tier) {
 
   // branches: real 3D directions — some toward the camera, some away
   const anchors = [pts[6].clone()];
-  const nBranch = randInt(3, 5) + (Math.random() < 0.35 ? 1 : 0);
+  const nBranch = randInt(4, 6) + (Math.random() < 0.35 ? 1 : 0);
   for (let b = 0; b < nBranch; b++) {
     const t0 = b === 0 && Math.random() < 0.35 ? rand(0.4, 0.55) : rand(0.5, 0.95);
     const start = trunkPoint(t0);
@@ -727,6 +727,29 @@ function makeTree3D(tier) {
     anchors.push(bpts[2]);
   }
 
+  // long, mostly-horizontal bare branches — perches for the future birds
+  if (tier >= 2) {
+    for (let k = 0, n = randInt(1, 2); k < n; k++) {
+      const t0 = rand(0.55, 0.8);
+      const start = trunkPoint(t0);
+      const az = rand(0, TAU);
+      const len = H * rand(0.28, 0.45);
+      const bpts = [start];
+      let dir = new THREE.Vector3(Math.cos(az), rand(0.05, 0.22), Math.sin(az)).normalize();
+      let p2 = start.clone();
+      for (let s2 = 1; s2 <= 3; s2++) {
+        p2 = p2.clone().addScaledVector(dir, len / 3);
+        dir = dir.clone();
+        dir.y += rand(-0.04, 0.1);
+        dir.x += rand(-0.12, 0.12);
+        dir.z += rand(-0.12, 0.12);
+        dir.normalize();
+        bpts.push(p2);
+      }
+      tubeInto(wood, bpts, R0 * 0.4, 0.02, 6);
+    }
+  }
+
   // a bare twig or two poking above the crown
   for (let k = 0; k < randInt(1, 2); k++) {
     const s0 = pts[6].clone();
@@ -741,7 +764,7 @@ function makeTree3D(tier) {
   crownC.y += H * 0.1;
   const clumps = [];
   for (const a of anchors) {
-    if (Math.random() < 0.12) continue; // some branches stay barer — gaps in the crown
+    if (Math.random() < 0.2) continue; // some branches stay barer — gaps in the crown
     clumps.push(a.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(0, 0.35), rand(-0.25, 0.25))));
   }
   for (let i = 0; i < (tier === 3 ? 5 : 3); i++) {
@@ -1056,6 +1079,16 @@ function makeVine(len) {
     place4(makeBush(rand(0.7, 1.1)), side * xBound(zf - 1.5) * rand(0.7, 0.95), zf - rand(1, 2), rand(0.004, 0.007));
     // and a smaller fern accent beside them
     place4(makeGroundFern(rand(0.8, 1.2)), side * xBound(zf) * rand(0.5, 0.7), zf - rand(0, 1), rand(0.006, 0.01));
+    // bushes strung along the forest edge — a playground for the creatures
+    for (let i = 0, n = randInt(3, 5); i < n; i++) {
+      const zb2 = rand(-8, 6);
+      place4(makeBush(rand(0.8, 1.5)), side * xBound(zb2) * rand(0.55, 0.95), zb2, rand(0.004, 0.007));
+    }
+    // and a couple deeper in, between the mid-distance trunks
+    for (let i = 0, n = randInt(1, 2); i < n; i++) {
+      const zb3 = rand(-15, -9);
+      place4(makeBush(rand(1.2, 2)), side * xBound(zb3) * rand(0.4, 0.8), zb3, rand(0.004, 0.007));
+    }
     // wild grass around the hero bases
     for (let i = 0, n = randInt(3, 5); i < n; i++) {
       const hb = pick(heroes) || anyHero;
