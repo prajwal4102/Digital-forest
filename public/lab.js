@@ -5,6 +5,7 @@
 // Center horizon stays open — everything else arrives in later layers.
 
 import * as THREE from './vendor/three.module.js';
+import { GLTFLoader } from './vendor/GLTFLoader.js';
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -885,6 +886,7 @@ function makeGroundFern(s2) {
 // bases. The central stage stays clean and calm.
 // ============================================================
 
+const rockSpots = [];
 const grassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide });
 addWind(grassMat, 1.1, 1.4);
 const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a927c, roughness: 1, flatShading: true });
@@ -960,6 +962,34 @@ function makeMossPatch(s2) {
   return new THREE.Mesh(buildGeo(A), coreMat);
 }
 
+// a dense, dome-shaped shrub built from the same leaf sprigs as the trees
+function makeBush(s2) {
+  const core = geoArrays();
+  const cards = geoArrays();
+  const base = new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.03));
+  for (let i = 0, n = randInt(2, 3); i < n; i++) {
+    blobInto(core, new THREE.Vector3(rand(-0.3, 0.3) * s2, s2 * rand(0.25, 0.4), rand(-0.3, 0.3) * s2),
+      s2 * rand(0.35, 0.5), new THREE.Vector3(1.15, 0.75, 1.15),
+      base.clone().lerp(new THREE.Color(0x1d4a2e), 0.25));
+  }
+  for (let i = 0, n = randInt(55, 85); i < n; i++) {
+    const dir = new THREE.Vector3().randomDirection();
+    dir.y = Math.abs(dir.y) * 0.9 + 0.15; // dome: leaves face up and out
+    dir.normalize();
+    const pos = new THREE.Vector3(
+      dir.x * s2 * rand(0.3, 0.62),
+      s2 * 0.3 + dir.y * s2 * rand(0.2, 0.45),
+      dir.z * s2 * rand(0.3, 0.62));
+    const shade2 = clamp(0.9 + dir.y * 0.18 + rand(-0.05, 0.05), 0.75, 1.1);
+    cardInto(cards, pos, s2 * rand(0.28, 0.45), dir,
+      base.clone().offsetHSL(0, rand(-0.03, 0.03), rand(-0.02, 0.02)).multiplyScalar(shade2), randInt(0, 3));
+  }
+  const g2 = new THREE.Group();
+  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
+  g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
+  return g2;
+}
+
 function makeVine(len) {
   const g2 = new THREE.Group(); // pivot at the top anchor so it can swing
   const wood2 = geoArrays();
@@ -1002,18 +1032,23 @@ function makeVine(len) {
   for (const side of [-1, 1]) {
     const heroes = heroBases.filter(h => Math.sign(h.x) === side);
     const anyHero = heroes[0] || { x: side * 8, z: 4 };
-    // lush fern cluster entering the lower corner
+    // natural shrubs settling into the lower corner
     const zf = rand(7.5, 9);
-    place4(makeGroundFern(rand(1.6, 2.4)), side * xBound(zf) * rand(0.6, 0.88), zf, rand(0.006, 0.01));
+    place4(makeBush(rand(1.2, 1.8)), side * xBound(zf) * rand(0.62, 0.88), zf, rand(0.004, 0.007));
+    place4(makeBush(rand(0.7, 1.1)), side * xBound(zf - 1.5) * rand(0.7, 0.95), zf - rand(1, 2), rand(0.004, 0.007));
+    // and a smaller fern accent beside them
+    place4(makeGroundFern(rand(0.8, 1.2)), side * xBound(zf) * rand(0.5, 0.7), zf - rand(0, 1), rand(0.006, 0.01));
     // wild grass around the hero bases
     for (let i = 0, n = randInt(3, 5); i < n; i++) {
       const hb = pick(heroes) || anyHero;
       place4(makeGrassTuft(rand(0.35, 0.6)), hb.x + rand(-1.8, 1.8), hb.z + rand(-0.8, 1.6), 0);
     }
-    // a few small rocks
-    for (let i = 0, n = randInt(1, 3); i < n; i++) {
-      const zr = rand(2, 7);
-      place4(makeRock(rand(0.14, 0.38)), side * xBound(zr) * rand(0.55, 0.9), zr, 0);
+    // a few small rocks (filled with scanned models once they load)
+    for (let i = 0, n = randInt(2, 3); i < n; i++) {
+      const zr = rand(2, 7.5);
+      const g2 = new THREE.Group();
+      place4(g2, side * xBound(zr) * rand(0.55, 0.9), zr, 0);
+      rockSpots.push({ g: g2, s: rand(0.16, 0.45) });
     }
     // one modest fallen branch
     if (Math.random() < 0.8) {
@@ -1046,6 +1081,41 @@ function makeVine(len) {
     cm.position.y = Math.random() < 0.5 ? rand(0.2, 0.8) : rand(5.5, 6.5);
   }
 }
+
+// ---- real scanned rocks (Poly Haven, CC0) fill the rock spots ----
+(async () => {
+  const loader = new GLTFLoader();
+  const urls = [
+    'models/rock_moss_set_01/rock_moss_set_01.gltf',
+    'models/rock_moss_set_02/rock_moss_set_02.gltf',
+    'models/stone_01/stone_01.gltf',
+  ];
+  const rocks = [];
+  await Promise.all(urls.map(async (u) => {
+    try {
+      const gltf = await loader.loadAsync(u);
+      gltf.scene.updateMatrixWorld(true);
+      gltf.scene.traverse((o) => { if (o.isMesh) rocks.push(o); });
+    } catch (e) { console.warn('rock model failed:', u, e); }
+  }));
+  console.log('rocks: ' + rocks.length + ' meshes for ' + rockSpots.length + ' spots');
+  for (const spot of rockSpots) {
+    if (!rocks.length) { spot.g.add(makeRock(spot.s)); continue; }
+    const src = pick(rocks);
+    src.geometry.computeBoundingBox();
+    const bb = src.geometry.boundingBox;
+    const footprint = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
+    const k = (spot.s * 2) / footprint;
+    const m = new THREE.Mesh(src.geometry, src.material);
+    m.scale.setScalar(k);
+    m.rotation.y = rand(0, TAU);
+    m.position.set(
+      -(bb.min.x + bb.max.x) / 2 * k,
+      -bb.min.y * k - spot.s * 0.12, // settled slightly into the ground line
+      -(bb.min.z + bb.max.z) / 2 * k);
+    spot.g.add(m);
+  }
+})();
 
 // ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
