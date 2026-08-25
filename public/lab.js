@@ -679,13 +679,15 @@ function makeTree3D(tier) {
 
   // trunk: curved, tapering, leaning its own way
   const leanA = rand(0, TAU);
-  const leanM = rand(0, 0.16) * H;
-  const bendM = rand(-0.14, 0.14) * H;
+  // most trunks grow nearly straight; a lean is occasional, a bow is rare
+  const leanM = (Math.random() < 0.6 ? rand(0, 0.04) : rand(0.04, 0.11)) * H;
+  const bendM = (Math.random() < 0.75 ? rand(-0.035, 0.035) : rand(-0.1, 0.1)) * H;
+  const bowF = rand(0.6, 1.3); // and when a bow happens, it peaks at varied heights
   const trunkTopY = H * rand(0.46, 0.58);
   const pts = [];
   for (let i = 0; i <= 6; i++) {
     const t = i / 6;
-    const bow = Math.sin(t * Math.PI) * bendM;
+    const bow = Math.sin(t * Math.PI * bowF) * bendM;
     pts.push(new THREE.Vector3(
       Math.cos(leanA) * (leanM * t * t) + Math.cos(leanA + 1.7) * bow,
       t * trunkTopY,
