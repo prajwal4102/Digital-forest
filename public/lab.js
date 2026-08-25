@@ -1195,7 +1195,7 @@ function frame() {
   const dt = Math.min(0.05, clock.getDelta());
 
   // slow, gentle camera breathing
-  camera.position.x = Math.sin(t * 0.04) * 0.4;
+  camera.position.x = Math.sin(t * 0.06) * 0.1; // barely-there sway, no perceptible drift
   camera.position.y = 1.7 + Math.sin(t * 0.07) * 0.08;
   camera.lookAt(0, 2.6, -20);
 
