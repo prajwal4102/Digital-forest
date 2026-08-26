@@ -524,6 +524,51 @@ const leafAtlasTexture = (() => {
   return canvasTex(c);
 })();
 
+// 2x2 atlas of SINGLE leaves â€” used by the drifting-leaf effect
+const singleLeafTexture = (() => {
+  const c = makeCanvas(512, 512);
+  const g = c.getContext('2d');
+  const PAIRS = [['#3f8a57', '#8fbe5e'], ['#2f6b46', '#6a9850'],
+                 ['#4a9a63', '#a3c464'], ['#357d50', '#7fae63']];
+  for (let v = 0; v < 4; v++) {
+    const ox = (v % 2) * 256, oy = (v > 1 ? 1 : 0) * 256;
+    g.save();
+    g.translate(ox + 128, oy + 128);
+    g.rotate(rand(-0.6, 0.6));
+    const L = rand(170, 205), W = rand(56, 82);
+    const [c0, c1] = PAIRS[v];
+    const grad = g.createLinearGradient(-L / 2, 0, L / 2, 0);
+    grad.addColorStop(0, c0);
+    grad.addColorStop(1, c1);
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(-L / 2, 0);
+    g.bezierCurveTo(-L * 0.2, -W, L * 0.22, -W * 0.85, L / 2, 0);
+    g.bezierCurveTo(L * 0.22, W * 0.85, -L * 0.2, W, -L / 2, 0);
+    g.fill();
+    g.strokeStyle = 'rgba(255,255,228,0.32)'; // midrib
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(-L / 2 + 6, 0);
+    g.lineTo(L / 2 - 8, 0);
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,228,0.16)'; // side veins
+    g.lineWidth = 2;
+    for (let i = -3; i <= 3; i++) {
+      if (!i) continue;
+      const x = i * (L / 9);
+      for (const sgn of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.quadraticCurveTo(x + L * 0.06, sgn * W * 0.3, x + L * 0.11, sgn * W * 0.52);
+        g.stroke();
+      }
+    }
+    g.restore();
+  }
+  return canvasTex(c);
+})();
+
 const woodMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 1 });
 const coreMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
 const leafMat = new THREE.MeshStandardMaterial({
@@ -1311,7 +1356,7 @@ makeMoteField({
 {
   for (let i = 0; i < 14; i++) {
     const near = i < 4; // a few closer to the camera, slightly larger
-    const sz = near ? rand(0.3, 0.46) : rand(0.13, 0.26);
+    const sz = near ? rand(0.22, 0.34) : rand(0.1, 0.2);
     const geo = new THREE.PlaneGeometry(sz, sz);
     const v = randInt(0, 3); // pick one leaf sprig from the atlas
     const uv = geo.attributes.uv;
@@ -1319,8 +1364,8 @@ makeMoteField({
       uv.setXY(k, (uv.getX(k) + (v % 2)) * 0.5, (uv.getY(k) + (v > 1 ? 1 : 0)) * 0.5);
     }
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      map: leafAtlasTexture, transparent: true, alphaTest: 0.35,
-      side: THREE.DoubleSide, color: new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, 0, rand(-0.05, 0.1)),
+      map: singleLeafTexture, transparent: true, alphaTest: 0.35,
+      side: THREE.DoubleSide, color: new THREE.Color().setHSL(rand(0.22, 0.3), rand(0.15, 0.35), rand(0.72, 0.9)),
     }));
     m.userData = {
       x: rand(-1, 1) * (near ? 12 : 15),
