@@ -408,27 +408,7 @@ const mists = [];
   scene.add(disc);
 }
 
-// ---- sparse floating pollen / dust ----
-let pollen;
-{
-  const n = 36;
-  const pts = new Float32Array(n * 3);
-  const base = [];
-  for (let i = 0; i < n; i++) {
-    const b = { x: rand(-16, 16), y: rand(0.6, 7), z: rand(-20, 8), p: rand(0, TAU), s: rand(0.05, 0.16) };
-    base.push(b);
-    pts.set([b.x, b.y, b.z], i * 3);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-  pollen = new THREE.Points(geo, new THREE.PointsMaterial({
-    size: 0.09, map: radialTex(64, [[0, 'rgba(255,250,220,0.9)'], [1, 'rgba(255,250,220,0)']]),
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    color: 0xfff6d8, sizeAttenuation: true, opacity: 0.55,
-  }));
-  pollen.userData.base = base;
-  scene.add(pollen);
-}
+// (atmospheric particles now live in Layer 5)
 
 // ---- placeholder stage floor, melting into the horizon haze ----
 // (intentionally no ground here — the real terrain arrives as its own layer)
@@ -704,7 +684,7 @@ function makeTree3D(tier) {
 
   // branches: real 3D directions — some toward the camera, some away
   const anchors = [pts[6].clone()];
-  const nBranch = randInt(4, 6) + (Math.random() < 0.35 ? 1 : 0);
+  const nBranch = randInt(3, 5) + (Math.random() < 0.35 ? 1 : 0);
   for (let b = 0; b < nBranch; b++) {
     const t0 = b === 0 && Math.random() < 0.35 ? rand(0.4, 0.55) : rand(0.5, 0.95);
     const start = trunkPoint(t0);
@@ -727,29 +707,6 @@ function makeTree3D(tier) {
     anchors.push(bpts[2]);
   }
 
-  // long, mostly-horizontal bare branches — perches for the future birds
-  if (tier >= 2) {
-    for (let k = 0, n = randInt(1, 2); k < n; k++) {
-      const t0 = rand(0.55, 0.8);
-      const start = trunkPoint(t0);
-      const az = rand(0, TAU);
-      const len = H * rand(0.28, 0.45);
-      const bpts = [start];
-      let dir = new THREE.Vector3(Math.cos(az), rand(0.05, 0.22), Math.sin(az)).normalize();
-      let p2 = start.clone();
-      for (let s2 = 1; s2 <= 3; s2++) {
-        p2 = p2.clone().addScaledVector(dir, len / 3);
-        dir = dir.clone();
-        dir.y += rand(-0.04, 0.1);
-        dir.x += rand(-0.12, 0.12);
-        dir.z += rand(-0.12, 0.12);
-        dir.normalize();
-        bpts.push(p2);
-      }
-      tubeInto(wood, bpts, R0 * 0.4, 0.02, 6);
-    }
-  }
-
   // a bare twig or two poking above the crown
   for (let k = 0; k < randInt(1, 2); k++) {
     const s0 = pts[6].clone();
@@ -764,7 +721,7 @@ function makeTree3D(tier) {
   crownC.y += H * 0.1;
   const clumps = [];
   for (const a of anchors) {
-    if (Math.random() < 0.2) continue; // some branches stay barer — gaps in the crown
+    if (Math.random() < 0.12) continue; // some branches stay barer — gaps in the crown
     clumps.push(a.clone().add(new THREE.Vector3(rand(-0.25, 0.25), rand(0, 0.35), rand(-0.25, 0.25))));
   }
   for (let i = 0; i < (tier === 3 ? 5 : 3); i++) {
@@ -1079,16 +1036,6 @@ function makeVine(len) {
     place4(makeBush(rand(0.7, 1.1)), side * xBound(zf - 1.5) * rand(0.7, 0.95), zf - rand(1, 2), rand(0.004, 0.007));
     // and a smaller fern accent beside them
     place4(makeGroundFern(rand(0.8, 1.2)), side * xBound(zf) * rand(0.5, 0.7), zf - rand(0, 1), rand(0.006, 0.01));
-    // bushes strung along the forest edge — a playground for the creatures
-    for (let i = 0, n = randInt(3, 5); i < n; i++) {
-      const zb2 = rand(-8, 6);
-      place4(makeBush(rand(0.8, 1.5)), side * xBound(zb2) * rand(0.55, 0.95), zb2, rand(0.004, 0.007));
-    }
-    // and a couple deeper in, between the mid-distance trunks
-    for (let i = 0, n = randInt(1, 2); i < n; i++) {
-      const zb3 = rand(-15, -9);
-      place4(makeBush(rand(1.2, 2)), side * xBound(zb3) * rand(0.4, 0.8), zb3, rand(0.004, 0.007));
-    }
     // wild grass around the hero bases
     for (let i = 0, n = randInt(3, 5); i < n; i++) {
       const hb = pick(heroes) || anyHero;
@@ -1167,6 +1114,229 @@ function makeVine(len) {
     spot.g.add(m);
   }
 })();
+
+// ============================================================
+// LAYER 5 — MAGICAL ATMOSPHERIC EFFECTS
+// A transparent overlay of light and air: floating motes, firefly glows,
+// soft sun shafts, gentle haze and a few drifting leaves. Every element
+// animates independently; the central stage stays calm.
+// ============================================================
+
+const moteFields = [];
+const sunBeams = [];
+const hazePatches = [];
+const driftLeaves = [];
+
+// soft round sprite used by every particle field
+function softDot(inner, outer) {
+  return radialTex(64, [[0, inner], [0.35, outer], [1, outer.replace(/[\d.]+\)$/, '0)')]]);
+}
+
+// GPU-animated particle field: per-particle size, drift, twinkle
+function makeMoteField({ count, tex, area, sizeMin, sizeMax, alphaMin, alphaMax,
+                         driftX, driftY, twinkle, centerClear }) {
+  const pos = new Float32Array(count * 3);
+  const aSize = new Float32Array(count);
+  const aPhase = new Float32Array(count);
+  const aAlpha = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    // bias particles away from the middle of the stage
+    let x = rand(-area.x, area.x);
+    if (centerClear && Math.abs(x) < centerClear) {
+      x = Math.sign(x || 1) * (centerClear + rand(0, area.x - centerClear));
+    }
+    pos[i * 3] = x;
+    pos[i * 3 + 1] = rand(area.y0, area.y1);
+    pos[i * 3 + 2] = rand(area.z0, area.z1);
+    aSize[i] = rand(sizeMin, sizeMax);
+    aPhase[i] = rand(0, TAU);
+    aAlpha[i] = rand(alphaMin, alphaMax);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(aPhase, 1));
+  geo.setAttribute('aAlpha', new THREE.BufferAttribute(aAlpha, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uTex: { value: tex },
+      uDriftX: { value: driftX },
+      uDriftY: { value: driftY },
+      uTwinkle: { value: twinkle },
+    },
+    vertexShader: `
+      attribute float aSize;
+      attribute float aPhase;
+      attribute float aAlpha;
+      uniform float uTime; uniform float uDriftX; uniform float uDriftY; uniform float uTwinkle;
+      varying float vAlpha;
+      void main() {
+        vec3 p = position;
+        p.x += sin(uTime * 0.21 + aPhase) * uDriftX
+             + sin(uTime * 0.07 + aPhase * 2.3) * uDriftX * 0.6;
+        p.y += sin(uTime * 0.17 + aPhase * 1.7) * uDriftY;
+        p.z += cos(uTime * 0.13 + aPhase) * uDriftX * 0.5;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        gl_PointSize = aSize * (260.0 / max(0.6, -mv.z));
+        gl_Position = projectionMatrix * mv;
+        float tw = mix(1.0, 0.35 + 0.65 * (0.5 + 0.5 * sin(uTime * 1.4 + aPhase * 4.0)), uTwinkle);
+        vAlpha = aAlpha * tw;
+      }`,
+    fragmentShader: `
+      uniform sampler2D uTex;
+      varying float vAlpha;
+      void main() {
+        vec4 c = texture2D(uTex, gl_PointCoord);
+        gl_FragColor = vec4(c.rgb, c.a * vAlpha);
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  moteFields.push(pts);
+  scene.add(pts);
+  return pts;
+}
+
+// EFFECT 1 — floating dust / pollen motes, sunlit and near-invisible
+makeMoteField({
+  count: 90,
+  tex: softDot('rgba(255,252,232,0.95)', 'rgba(255,248,214,0.45)'),
+  area: { x: 17, y0: 0.4, y1: 8.5, z0: -18, z1: 9 },
+  sizeMin: 0.5, sizeMax: 2.6, alphaMin: 0.1, alphaMax: 0.5,
+  driftX: 0.55, driftY: 0.3, twinkle: 0.35, centerClear: 2.5,
+});
+// a few larger, closer motes catching the light
+makeMoteField({
+  count: 22,
+  tex: softDot('rgba(255,253,240,1)', 'rgba(255,246,205,0.5)'),
+  area: { x: 13, y0: 0.6, y1: 5.5, z0: 3, z1: 9.5 },
+  sizeMin: 2.2, sizeMax: 4.5, alphaMin: 0.08, alphaMax: 0.28,
+  driftX: 0.4, driftY: 0.22, twinkle: 0.25, centerClear: 4,
+});
+
+// EFFECT 2 — sparse firefly-like glows, warm golden-green
+makeMoteField({
+  count: 26,
+  tex: softDot('rgba(250,255,200,1)', 'rgba(214,246,150,0.55)'),
+  area: { x: 16, y0: 0.5, y1: 4.5, z0: -12, z1: 8 },
+  sizeMin: 2, sizeMax: 4.2, alphaMin: 0.35, alphaMax: 0.8,
+  driftX: 0.9, driftY: 0.5, twinkle: 1, centerClear: 4.5,
+});
+
+// EFFECT 3 — soft sunlight shafts filtering through the canopy
+{
+  const beamTex = (() => {
+    const c = makeCanvas(128, 512);
+    const g = c.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 128, 0);
+    grad.addColorStop(0, 'rgba(255,247,214,0)');
+    grad.addColorStop(0.5, 'rgba(255,250,226,0.5)');
+    grad.addColorStop(1, 'rgba(255,247,214,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 512);
+    const fade = g.createLinearGradient(0, 0, 0, 512);
+    fade.addColorStop(0, 'rgba(0,0,0,0)');       // soft at the canopy
+    fade.addColorStop(0.25, 'rgba(0,0,0,1)');
+    fade.addColorStop(0.75, 'rgba(0,0,0,0.55)');
+    fade.addColorStop(1, 'rgba(0,0,0,0)');       // dissolves before the ground
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = fade;
+    g.fillRect(0, 0, 128, 512);
+    return canvasTex(c);
+  })();
+  const spots = [
+    { x: -9.5, z: -3, w: 3.2, h: 13, tilt: 0.2, a: 0.16 },
+    { x: -5.5, z: -8, w: 2.4, h: 12, tilt: 0.14, a: 0.1 },
+    { x: 8.5, z: -2, w: 3.6, h: 13, tilt: -0.22, a: 0.18 },
+    { x: 12.5, z: -7, w: 2.6, h: 12, tilt: -0.15, a: 0.12 },
+    { x: 2.5, z: -12, w: 2.2, h: 11, tilt: -0.1, a: 0.07 }, // faint, far behind the stage
+  ];
+  for (const sp of spots) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(sp.w, sp.h),
+      new THREE.MeshBasicMaterial({
+        map: beamTex, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, opacity: sp.a,
+      }),
+    );
+    m.position.set(sp.x, sp.h / 2 - 1, sp.z);
+    m.rotation.z = sp.tilt;
+    m.rotation.y = rand(-0.3, 0.3);
+    m.userData = { base: sp.a, sp: rand(0.08, 0.2), ph: rand(0, TAU) };
+    m.renderOrder = 20;
+    sunBeams.push(m);
+    scene.add(m);
+  }
+}
+
+// EFFECT 4 — very light haze separating the depth planes
+{
+  const hazeTex = (() => {
+    const c = makeCanvas(512, 256);
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(256, 128, 0, 256, 128, 256);
+    grad.addColorStop(0, 'rgba(232,244,222,0.5)');
+    grad.addColorStop(0.55, 'rgba(232,244,222,0.18)');
+    grad.addColorStop(1, 'rgba(232,244,222,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 512, 256);
+    return canvasTex(c);
+  })();
+  const spots = [
+    { x: -12, y: 2.6, z: -9, w: 18, a: 0.2 },
+    { x: 11, y: 2.4, z: -11, w: 20, a: 0.18 },
+    { x: -3, y: 2.2, z: -16, w: 22, a: 0.14 },
+    { x: 14, y: 1.8, z: -2, w: 12, a: 0.1 },
+  ];
+  for (const sp of spots) {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(sp.w, sp.w * 0.42),
+      new THREE.MeshBasicMaterial({
+        map: hazeTex, transparent: true, depthWrite: false, fog: false, opacity: sp.a,
+      }),
+    );
+    m.position.set(sp.x, sp.y, sp.z);
+    m.userData = { x0: sp.x, base: sp.a, sp: rand(0.01, 0.03), ph: rand(0, TAU) };
+    m.renderOrder = 18;
+    hazePatches.push(m);
+    scene.add(m);
+  }
+}
+
+// EFFECT 5 — a few individual leaves drifting on the breeze
+{
+  for (let i = 0; i < 14; i++) {
+    const near = i < 4; // a few closer to the camera, slightly larger
+    const sz = near ? rand(0.3, 0.46) : rand(0.13, 0.26);
+    const geo = new THREE.PlaneGeometry(sz, sz);
+    const v = randInt(0, 3); // pick one leaf sprig from the atlas
+    const uv = geo.attributes.uv;
+    for (let k = 0; k < uv.count; k++) {
+      uv.setXY(k, (uv.getX(k) + (v % 2)) * 0.5, (uv.getY(k) + (v > 1 ? 1 : 0)) * 0.5);
+    }
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      map: leafAtlasTexture, transparent: true, alphaTest: 0.35,
+      side: THREE.DoubleSide, color: new THREE.Color(pick(LEAF_GREENS)).offsetHSL(0, 0, rand(-0.05, 0.1)),
+    }));
+    m.userData = {
+      x: rand(-1, 1) * (near ? 12 : 15),
+      y: rand(1, 10),
+      z: near ? rand(5, 9) : rand(-14, 6),
+      age: rand(0, 6),
+      fall: rand(0.28, 0.6),
+      sway: rand(0.5, 1.6),
+      swaySp: rand(0.4, 1.1),
+      ph: rand(0, TAU),
+      rx: rand(-1.1, 1.1), ry: rand(-0.9, 0.9), rz: rand(-1.3, 1.3),
+    };
+    driftLeaves.push(m);
+    scene.add(m);
+  }
+}
 
 // ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
@@ -1252,19 +1422,31 @@ function frame() {
     tr.rotation.z = Math.sin(t * tr.userData.swaySpeed + tr.userData.phase) * tr.userData.swayAmp;
   }
 
-  // pollen floats and twinkles
-  if (pollen) {
-    const pos = pollen.geometry.attributes.position;
-    const base = pollen.userData.base;
-    for (let i = 0; i < base.length; i++) {
-      const b = base[i];
-      pos.setXYZ(i,
-        b.x + Math.sin(t * b.s + b.p) * 1.4,
-        b.y + Math.sin(t * b.s * 1.7 + b.p * 2) * 0.5,
-        b.z + Math.cos(t * b.s * 0.8 + b.p) * 0.8);
+  // ---- layer 5 atmosphere ----
+  for (const m of moteFields) m.material.uniforms.uTime.value = t;
+  for (const b of sunBeams) {
+    b.material.opacity = b.userData.base * (0.72 + 0.28 * Math.sin(t * b.userData.sp + b.userData.ph));
+  }
+  for (const h of hazePatches) {
+    h.position.x = h.userData.x0 + Math.sin(t * h.userData.sp + h.userData.ph) * 2.2;
+    h.material.opacity = h.userData.base * (0.75 + 0.25 * Math.sin(t * 0.11 + h.userData.ph));
+  }
+  for (const lf of driftLeaves) {
+    const d = lf.userData;
+    d.age += dt;
+    lf.position.set(
+      d.x + Math.sin(t * d.swaySp + d.ph) * d.sway,
+      d.y - d.fall * d.age,
+      d.z + Math.cos(t * d.swaySp * 0.7 + d.ph) * d.sway * 0.5);
+    lf.rotation.x += d.rx * dt;
+    lf.rotation.y += d.ry * dt;
+    lf.rotation.z += d.rz * dt;
+    if (lf.position.y < -0.6) { // caught by a new gust up in the canopy
+      d.age = 0;
+      d.x = rand(-1, 1) * 15;
+      d.y = rand(7, 11);
+      d.z = rand(-14, 8);
     }
-    pos.needsUpdate = true;
-    pollen.material.opacity = 0.45 + Math.sin(t * 0.5) * 0.12;
   }
 
   renderer.render(scene, camera);
