@@ -1161,6 +1161,186 @@ function makeVine(len) {
 })();
 
 // ============================================================
+// LAYER 6 — INTERACTIVE FOREST CLEARING
+// A naturally irregular fringe around an open centre: grass tufts, low
+// plants, sparse wildflowers, small mushrooms, stones and low roots
+// reaching out of the hero trees. Density rises with distance from the
+// stage; the middle stays clean for the children's creatures.
+// ============================================================
+
+// tiny 5-petal wildflower heads (2x2 atlas, white so vertex colour tints)
+const flowerTexture = (() => {
+  const c = makeCanvas(256, 256);
+  const g = c.getContext('2d');
+  for (let v = 0; v < 4; v++) {
+    const ox = (v % 2) * 128 + 64, oy = (v > 1 ? 128 : 0) + 64;
+    const petals = 5 + (v % 2);
+    const R = rand(30, 42), pr = R * rand(0.42, 0.52);
+    g.save();
+    g.translate(ox, oy);
+    g.rotate(rand(0, TAU));
+    g.fillStyle = '#ffffff';
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * TAU;
+      g.beginPath();
+      g.ellipse(Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5, pr, pr * rand(0.7, 0.9), a, 0, TAU);
+      g.fill();
+    }
+    g.fillStyle = 'rgba(255,236,170,0.95)'; // soft centre
+    g.beginPath();
+    g.arc(0, 0, R * 0.22, 0, TAU);
+    g.fill();
+    g.restore();
+  }
+  return canvasTex(c);
+})();
+
+const bigLeafMat = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 1, map: singleLeafTexture,
+  alphaTest: 0.35, side: THREE.DoubleSide,
+});
+const flowerMat = new THREE.MeshStandardMaterial({
+  vertexColors: true, roughness: 1, map: flowerTexture,
+  alphaTest: 0.3, side: THREE.DoubleSide,
+});
+const propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
+addWind(bigLeafMat, 0.9, 1.2);
+addWind(flowerMat, 1.2, 1.6);
+
+{
+  const grassA = geoArrays();   // blades
+  const plantA = geoArrays();   // broad-leaf shoots
+  const flowerA = geoArrays();  // blossom cards
+  const propA = geoArrays();    // mushrooms
+  const rootA = geoArrays();    // low roots
+
+  // --- blades of grass at a world spot ---
+  function grassInto(A, wx, wz, s2, blades) {
+    const col = new THREE.Color(pick([0x5f9a4a, 0x6fae57, 0x7fae63, 0x55904a, 0x86b866]));
+    for (let i = 0; i < blades; i++) {
+      const a = rand(0, TAU);
+      const lean = rand(0.1, 0.6);
+      const dx = Math.cos(a) * lean, dz = Math.sin(a) * lean;
+      const hgt = s2 * rand(0.45, 1.05);
+      const w = s2 * rand(0.03, 0.055);
+      const bx = wx + rand(-s2, s2) * 0.3, bz = wz + rand(-s2, s2) * 0.3;
+      const px = -Math.sin(a), pz = Math.cos(a);
+      const start = A.pos.length / 3;
+      const c = col.clone().multiplyScalar(rand(0.85, 1.12));
+      const verts = [
+        [bx - px * w, 0, bz - pz * w],
+        [bx + px * w, 0, bz + pz * w],
+        [bx - px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz - pz * w * 0.5 + dz * hgt * 0.6],
+        [bx + px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz + pz * w * 0.5 + dz * hgt * 0.6],
+        [bx + dx * hgt, hgt, bz + dz * hgt],
+      ];
+      for (const [X, Y, Z] of verts) {
+        const sh = 0.72 + (Y / hgt) * 0.38;
+        A.pos.push(X, Y, Z);
+        A.norm.push(0, 0.45, 0.89);
+        A.col.push(c.r * sh, c.g * sh, c.b * sh);
+      }
+      A.idx.push(start, start + 1, start + 2, start + 1, start + 3, start + 2, start + 2, start + 3, start + 4);
+    }
+  }
+
+  // --- low broad-leaf shoot ---
+  function plantInto(A, wx, wz, s2) {
+    const col = new THREE.Color(pick([0x4f9a55, 0x5faa62, 0x6fae57, 0x479366]));
+    const n = randInt(4, 7);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + rand(-0.35, 0.35);
+      const out = rand(0.25, 0.55);
+      const dir = new THREE.Vector3(Math.cos(a) * out, rand(0.55, 1), Math.sin(a) * out).normalize();
+      cardInto(A,
+        new THREE.Vector3(wx + Math.cos(a) * s2 * rand(0.12, 0.4), s2 * rand(0.2, 0.5), wz + Math.sin(a) * s2 * rand(0.12, 0.4)),
+        s2 * rand(0.5, 0.85), dir,
+        col.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.04, 0.05)).multiplyScalar(rand(0.85, 1.08)),
+        randInt(0, 3));
+    }
+  }
+
+  // --- one wildflower: a blossom or two facing the viewer, on a blade stem ---
+  const FLOWER_COLS = [0xfff2a8, 0xffffff, 0xffd9e4, 0xcfe3ff, 0xfff6cf];
+  function flowerInto(A, gA, wx, wz, s2) {
+    const col = new THREE.Color(pick(FLOWER_COLS));
+    grassInto(gA, wx, wz, s2 * 1.5, randInt(2, 4)); // green stems / leaves at its foot
+    for (let i = 0, n = randInt(1, 3); i < n; i++) {
+      cardInto(A,
+        new THREE.Vector3(wx + rand(-0.1, 0.1), s2 * rand(0.6, 1.1), wz + rand(-0.1, 0.1)),
+        s2 * rand(0.5, 0.8),
+        new THREE.Vector3(rand(-0.35, 0.35), rand(0.35, 0.7), 1).normalize(),
+        col.clone().multiplyScalar(rand(0.92, 1)), randInt(0, 3));
+    }
+  }
+
+  // --- small friendly mushroom ---
+  function mushroomInto(A, wx, wz, s2) {
+    const stem = new THREE.Color(pick([0xefe4cd, 0xe6dcc2, 0xf3ead6]));
+    const cap = new THREE.Color(pick([0xc98f6a, 0xb87b5c, 0xd8a679, 0xa9755a]));
+    blobInto(A, new THREE.Vector3(wx, s2 * 0.34, wz), s2 * 0.17,
+      new THREE.Vector3(0.55, 2.1, 0.55), stem);
+    blobInto(A, new THREE.Vector3(wx, s2 * 0.62, wz), s2 * 0.34,
+      new THREE.Vector3(1.2, 0.55, 1.2), cap);
+  }
+
+  // --- irregular, density-graded spots around the stage ---
+  function clearingSpots(n) {
+    const out = [];
+    let guard = 0;
+    while (out.length < n && guard++ < n * 60) {
+      const z = rand(-3.5, 9.2);
+      const x = rand(-1, 1) * xBound(z);
+      const d = Math.hypot(x / 4.6, (z - 3) / 6);
+      if (d < 1) continue;                                     // stage stays clear
+      if (Math.random() > clamp((d - 1) * 1.1, 0.06, 1)) continue; // denser further out
+      out.push({ x, z, d });
+    }
+    return out;
+  }
+
+  for (const p of clearingSpots(72)) {
+    grassInto(grassA, p.x, p.z, rand(0.22, 0.5), Math.random() < 0.35 ? randInt(2, 3) : randInt(5, 11));
+  }
+  for (const p of clearingSpots(26)) plantInto(plantA, p.x, p.z, rand(0.3, 0.62));
+  for (const p of clearingSpots(20)) flowerInto(flowerA, grassA, p.x, p.z, rand(0.16, 0.3));
+  for (const p of clearingSpots(11)) mushroomInto(propA, p.x, p.z, rand(0.16, 0.3));
+
+  // --- a few tiny stones (scanned models fill these too) ---
+  for (const p of clearingSpots(8)) {
+    const g2 = new THREE.Group();
+    g2.position.set(p.x, 0, p.z);
+    scene.add(g2);
+    rockSpots.push({ g: g2, s: rand(0.07, 0.16) });
+  }
+
+  // --- low roots easing out of the hero trees toward the clearing ---
+  for (const hb of heroBases) {
+    for (let k = 0, n = randInt(2, 3); k < n; k++) {
+      const away = Math.sign(hb.x || 1);
+      const a = rand(-0.9, 0.9) + (away > 0 ? 0 : Math.PI); // never reach across the centre
+      const dx = Math.cos(a), dz = Math.sin(a) * 0.8;
+      const ext = rand(1.1, 2.3);
+      rootA.pos.length; // (arrays reused below)
+      tubeInto(rootA, [
+        new THREE.Vector3(hb.x + dx * 0.15, 0.34, hb.z + dz * 0.15),
+        new THREE.Vector3(hb.x + dx * ext * 0.4, 0.17, hb.z + dz * ext * 0.4),
+        new THREE.Vector3(hb.x + dx * ext * 0.75, 0.08, hb.z + dz * ext * 0.75),
+        new THREE.Vector3(hb.x + dx * ext, 0.03, hb.z + dz * ext),
+      ], rand(0.1, 0.16), 0.022, 6);
+      // vegetation tucked against the root so it never reads as a bare tube
+      grassInto(grassA, hb.x + dx * ext * rand(0.5, 0.95), hb.z + dz * ext * rand(0.5, 0.95), rand(0.25, 0.4), randInt(4, 8));
+    }
+  }
+
+  scene.add(new THREE.Mesh(buildGeo(grassA), grassMat));
+  scene.add(new THREE.Mesh(buildGeo(plantA), bigLeafMat));
+  scene.add(new THREE.Mesh(buildGeo(flowerA), flowerMat));
+  scene.add(new THREE.Mesh(buildGeo(propA), propMat));
+  scene.add(new THREE.Mesh(buildGeo(rootA), woodMat));
+}
+
+// ============================================================
 // LAYER 5 — MAGICAL ATMOSPHERIC EFFECTS
 // A transparent overlay of light and air: floating motes, firefly glows,
 // soft sun shafts, gentle haze and a few drifting leaves. Every element
