@@ -1540,20 +1540,28 @@ function softDot(inner, outer) {
 
 // GPU-animated particle field: per-particle size, drift, twinkle
 function makeMoteField({ count, tex, area, sizeMin, sizeMax, alphaMin, alphaMax,
-                         driftX, driftY, twinkle, centerClear }) {
+                         driftX, driftY, twinkle, centerClear, spots }) {
   const pos = new Float32Array(count * 3);
   const aSize = new Float32Array(count);
   const aPhase = new Float32Array(count);
   const aAlpha = new Float32Array(count);
   for (let i = 0; i < count; i++) {
-    // bias particles away from the middle of the stage
-    let x = rand(-area.x, area.x);
-    if (centerClear && Math.abs(x) < centerClear) {
-      x = Math.sign(x || 1) * (centerClear + rand(0, area.x - centerClear));
+    if (spots && spots.length) {
+      // gather around vegetation rather than filling the air evenly
+      const sp = spots[Math.floor(Math.random() * spots.length)];
+      pos[i * 3] = sp.x + rand(-1.6, 1.6);
+      pos[i * 3 + 1] = rand(area.y0, area.y1);
+      pos[i * 3 + 2] = sp.z + rand(-1.2, 1.2);
+    } else {
+      // bias particles away from the middle of the stage
+      let x = rand(-area.x, area.x);
+      if (centerClear && Math.abs(x) < centerClear) {
+        x = Math.sign(x || 1) * (centerClear + rand(0, area.x - centerClear));
+      }
+      pos[i * 3] = x;
+      pos[i * 3 + 1] = rand(area.y0, area.y1);
+      pos[i * 3 + 2] = rand(area.z0, area.z1);
     }
-    pos[i * 3] = x;
-    pos[i * 3 + 1] = rand(area.y0, area.y1);
-    pos[i * 3 + 2] = rand(area.z0, area.z1);
     aSize[i] = rand(sizeMin, sizeMax);
     aPhase[i] = rand(0, TAU);
     aAlpha[i] = rand(alphaMin, alphaMax);
@@ -1626,7 +1634,7 @@ makeMoteField({
 
 // EFFECT 2 — sparse firefly-like glows, warm golden-green
 makeMoteField({
-  count: 26,
+  count: 12,
   tex: softDot('rgba(250,255,200,1)', 'rgba(214,246,150,0.55)'),
   area: { x: 16, y0: 0.5, y1: 4.5, z0: -12, z1: 8 },
   sizeMin: 2, sizeMax: 4.2, alphaMin: 0.35, alphaMax: 0.8,
@@ -1745,6 +1753,110 @@ makeMoteField({
 }
 
 // ============================================================
+// LAYER 8 — SUBTLE MAGICAL LIFE
+// A far particle tier for cinematic depth, fireflies gathering around the
+// vegetation, warm light pockets caught in the canopy, and a few seeds
+// drifting on the breeze. Deliberately understated.
+// ============================================================
+
+const lightPockets = [];
+const driftSeeds = [];
+
+{
+  // --- distant micro-particles: the faintest depth tier ---
+  makeMoteField({
+    count: 70,
+    tex: softDot('rgba(255,253,238,0.9)', 'rgba(238,248,206,0.35)'),
+    area: { x: 20, y0: 0.6, y1: 7.5, z0: -26, z1: -6 },
+    sizeMin: 0.35, sizeMax: 1.1, alphaMin: 0.06, alphaMax: 0.22,
+    driftX: 0.5, driftY: 0.25, twinkle: 0.3, centerClear: 2,
+  });
+
+  // --- fireflies gathering where the plants are ---
+  const vegSpots = [];
+  for (const b of treeBases) if (Math.abs(b.x) > 4) vegSpots.push(b);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const z = rand(-6, 8);
+      vegSpots.push({ x: side * rand(0.5, 0.95) * xBound(z), z });
+    }
+  }
+  if (vegSpots.length) {
+    makeMoteField({
+      count: 20,
+      tex: softDot('rgba(252,255,206,1)', 'rgba(220,248,158,0.5)'),
+      area: { x: 18, y0: 0.35, y1: 3.4, z0: -12, z1: 8 },
+      sizeMin: 1.8, sizeMax: 3.8, alphaMin: 0.3, alphaMax: 0.72,
+      driftX: 0.85, driftY: 0.45, twinkle: 1, spots: vegSpots,
+    });
+  }
+
+  // --- warm light pockets: sun caught between the leaves ---
+  const pocketTex = radialTex(128, [
+    [0, 'rgba(255,246,206,0.75)'], [0.4, 'rgba(255,240,180,0.22)'], [1, 'rgba(255,240,180,0)'],
+  ]);
+  for (const side of [-1, 1]) {
+    for (let i = 0, n = randInt(3, 4); i < n; i++) {
+      const z = rand(-14, 3);
+      const m = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: pocketTex, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, opacity: 0.1,
+      }));
+      const sc = rand(1.6, 3.4);
+      m.scale.set(sc, sc, 1);
+      m.position.set(side * rand(0.35, 0.9) * xBound(z), rand(4.5, 9), z);
+      m.userData = { base: rand(0.06, 0.13), sp: rand(0.13, 0.3), ph: rand(0, TAU) };
+      lightPockets.push(m);
+      scene.add(m);
+    }
+  }
+
+  // --- a few seeds drifting on the breeze ---
+  const seedTex = (() => {
+    const c = makeCanvas(128, 128);
+    const g = c.getContext('2d');
+    g.strokeStyle = 'rgba(255,255,246,0.8)';
+    g.lineWidth = 2;
+    for (let i = 0; i < 16; i++) {
+      const a = -Math.PI / 2 + rand(-1.05, 1.05);
+      g.beginPath();
+      g.moveTo(64, 96);
+      g.quadraticCurveTo(64 + Math.cos(a) * 22, 96 + Math.sin(a) * 26,
+        64 + Math.cos(a) * 46, 96 + Math.sin(a) * 52);
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(214,196,150,0.95)';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(64, 96);
+    g.lineTo(64, 118);
+    g.stroke();
+    return canvasTex(c);
+  })();
+  for (let i = 0; i < 11; i++) {
+    const near = i < 3;
+    const sz = near ? rand(0.2, 0.3) : rand(0.09, 0.16);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(sz, sz), new THREE.MeshBasicMaterial({
+      map: seedTex, transparent: true, depthWrite: false, opacity: rand(0.5, 0.85),
+      side: THREE.DoubleSide,
+    }));
+    m.userData = {
+      x: rand(-1, 1) * (near ? 11 : 16),
+      y: rand(0.8, 6),
+      z: near ? rand(4, 9) : rand(-13, 5),
+      t0: rand(0, 40),
+      rise: rand(0.05, 0.16),
+      sway: rand(0.6, 1.9),
+      swaySp: rand(0.25, 0.6),
+      ph: rand(0, TAU),
+      spin: rand(-0.5, 0.5),
+    };
+    driftSeeds.push(m);
+    scene.add(m);
+  }
+}
+
+// ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
 // Drop generated layer images into public/layers/ and they replace the
 // procedural stand-ins automatically:
@@ -1830,6 +1942,19 @@ function frame() {
 
   // ---- layer 5 atmosphere ----
   for (const m of moteFields) m.material.uniforms.uTime.value = t;
+  for (const p of lightPockets) {
+    p.material.opacity = p.userData.base * (0.55 + 0.45 * Math.sin(t * p.userData.sp + p.userData.ph));
+  }
+  for (const sd of driftSeeds) {
+    const d = sd.userData;
+    const age = (t + d.t0) % 42;
+    sd.position.set(
+      d.x + Math.sin(t * d.swaySp + d.ph) * d.sway,
+      d.y + Math.sin(age * 0.11 + d.ph) * 0.5 + age * d.rise * 0.35,
+      d.z + Math.cos(t * d.swaySp * 0.6 + d.ph) * d.sway * 0.4);
+    sd.rotation.z = Math.sin(t * 0.5 + d.ph) * 0.5 + d.spin * t * 0.25;
+    if (age > 40) sd.position.y -= (age - 40) * 6; // slip away and return
+  }
   for (const b of sunBeams) {
     b.material.opacity = b.userData.base * (0.72 + 0.28 * Math.sin(t * b.userData.sp + b.userData.ph));
   }
