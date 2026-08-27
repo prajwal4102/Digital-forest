@@ -1306,6 +1306,7 @@ addWind(flowerMat, 1.2, 1.6);
     const cOlive = new THREE.Color(0x6a7b45);
     const cDeep = new THREE.Color(0x3f5c37);
     const cEarth = new THREE.Color(0x8a7051);
+    const cWarm = new THREE.Color(0xc9d68a);
     const cHaze = new THREE.Color(0xcfe0b0);
     const col = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
@@ -1329,7 +1330,12 @@ addWind(flowerMat, 1.2, 1.6);
       col.lerp(cDeep, near * 0.72);
       const sx2 = x / 7.5, sz2 = (z - 3) / 8.5;
       const stage = clamp(1 - (sx2 * sx2 + sz2 * sz2), 0, 1);
-      col.lerp(cLush, stage * 0.22); // the walked centre reads lighter
+      col.lerp(cLush, stage * 0.3);  // the walked centre reads lighter
+      col.lerp(cWarm, stage * 0.12); // and very slightly warmer
+      // ...while the outer floor settles deeper, so the eye travels inward.
+      // Squared falloff: gradual everywhere, no boundary anywhere.
+      const ox = x / 9.5, oz = (z - 3) / 11;
+      col.lerp(cDeep, clamp((ox * ox + oz * oz - 1) * 0.24, 0, 0.24));
       col.lerp(cHaze, clamp((-z - 22) / 55, 0, 0.85)); // melt into the horizon
       cols.push(col.r, col.g, col.b);
     }
@@ -1514,6 +1520,20 @@ addWind(flowerMat, 1.2, 1.6);
     }
   }
 
+  // taller grass gathers just outside the clearing and shortens inward —
+  // an irregular band, never a ring
+  for (let i = 0; i < 20; i++) {
+    const a = rand(0, TAU);
+    const rr = rand(1.1, 1.75) * (0.85 + Math.sin(a * 2.3 + 1.1) * 0.25);
+    const gx = Math.cos(a) * 5.4 * rr;
+    const gz = 3 + Math.sin(a) * 6.4 * rr;
+    if (gz > 9.4 || gz < -4.5 || Math.abs(gx) > xBound(gz) * 0.98) continue;
+    for (let k = 0, n = randInt(2, 4); k < n; k++) {
+      grassInto(grassA, gx + rand(-0.45, 0.45), gz + rand(-0.4, 0.4),
+        rand(0.42, 0.66), randInt(8, 14));
+    }
+  }
+
   scene.add(new THREE.Mesh(buildGeo(grassA), grassMat));
   scene.add(new THREE.Mesh(buildGeo(plantA), bigLeafMat));
   scene.add(new THREE.Mesh(buildGeo(flowerA), flowerMat));
@@ -1692,12 +1712,16 @@ makeMoteField({
   const hazeTex = (() => {
     const c = makeCanvas(512, 256);
     const g = c.getContext('2d');
-    const grad = g.createRadialGradient(256, 128, 0, 256, 128, 256);
+    g.save();
+    g.translate(256, 128);
+    g.scale(2, 1); // ellipse fitted to the canvas: alpha hits 0 on every edge
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, 128);
     grad.addColorStop(0, 'rgba(232,244,222,0.5)');
-    grad.addColorStop(0.55, 'rgba(232,244,222,0.18)');
+    grad.addColorStop(0.55, 'rgba(232,244,222,0.16)');
     grad.addColorStop(1, 'rgba(232,244,222,0)');
     g.fillStyle = grad;
-    g.fillRect(0, 0, 512, 256);
+    g.fillRect(-128, -128, 256, 256);
+    g.restore();
     return canvasTex(c);
   })();
   const spots = [
@@ -1857,6 +1881,95 @@ const driftSeeds = [];
 }
 
 // ============================================================
+// LAYER 9 — INTERACTIVE CLEARING FOCUS
+// Sunlight filtered through the canopy pools softly in the clearing and
+// shifts as the leaves move; a few warm motes hang around the perimeter.
+// Nothing here draws an edge, a ring or a stage.
+// ============================================================
+
+const sunPatches = [];
+
+{
+  // an irregular, feathered pool of light — never a clean circle
+  const dappleTex = (() => {
+    const S = 256;
+    const sharp = makeCanvas(S, S);
+    const g = sharp.getContext('2d');
+    for (let i = 0, n = randInt(4, 7); i < n; i++) {
+      const gx = rand(S * 0.36, S * 0.64), gy = rand(S * 0.36, S * 0.64);
+      const rr = rand(S * 0.1, S * 0.2);
+      const grad = g.createRadialGradient(gx, gy, 0, gx, gy, rr);
+      grad.addColorStop(0, 'rgba(255,248,214,0.85)');
+      grad.addColorStop(0.55, 'rgba(255,244,196,0.3)');
+      grad.addColorStop(1, 'rgba(255,244,196,0)');
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(gx, gy, rr, rr * rand(0.6, 1), rand(0, TAU), 0, TAU);
+      g.fill();
+    }
+    const c = makeCanvas(S, S);
+    const out = c.getContext('2d');
+    out.filter = 'blur(14px)'; // feathered, no hard edge anywhere
+    out.drawImage(sharp, 0, 0);
+    out.filter = 'none';
+    out.globalCompositeOperation = 'destination-in'; // guarantee a zero border
+    const mask = out.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    mask.addColorStop(0, 'rgba(0,0,0,1)');
+    mask.addColorStop(0.62, 'rgba(0,0,0,1)');
+    mask.addColorStop(1, 'rgba(0,0,0,0)');
+    out.fillStyle = mask;
+    out.fillRect(0, 0, S, S);
+    out.globalCompositeOperation = 'source-over';
+    return canvasTex(c);
+  })();
+
+  // scattered through and around the clearing, weighted to the sides
+  const spots = [
+    { x: -6.2, z: 2.5, s: 4.4, a: 0.1 },
+    { x: -3.1, z: 6.4, s: 3.2, a: 0.075 },
+    { x: 5.8, z: 1.2, s: 4.8, a: 0.11 },
+    { x: 8.4, z: 5.6, s: 3.6, a: 0.085 },
+    { x: 1.4, z: -1.4, s: 3.8, a: 0.07 },
+    { x: -8.6, z: -2.2, s: 3.4, a: 0.08 },
+    { x: 3.4, z: 8.2, s: 2.8, a: 0.06 },
+    { x: -1.8, z: 3.6, s: 3.0, a: 0.045 }, // faintest, nearest the stage
+  ];
+  for (const sp of spots) {
+    const geo = new THREE.PlaneGeometry(sp.s, sp.s * 2.6); // elongated: the
+    geo.rotateX(-Math.PI / 2);                             // ground is seen
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({  // near edge-on
+      map: dappleTex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: sp.a, fog: false,
+    }));
+    m.position.set(sp.x, groundHeight(sp.x, sp.z) + 0.035, sp.z);
+    m.rotation.y = rand(0, TAU);
+    m.userData = { base: sp.a, sp: rand(0.06, 0.16), ph: rand(0, TAU), x0: sp.x };
+    m.renderOrder = 2;
+    sunPatches.push(m);
+    scene.add(m);
+  }
+
+  // a few warm motes loitering around the clearing's edge, not over the stage
+  const rim = [];
+  for (let i = 0; i < 14; i++) {
+    const a = rand(0, TAU);
+    const rr = rand(1.15, 1.6);
+    const rx = Math.cos(a) * 5.6 * rr, rz = 3 + Math.sin(a) * 6.6 * rr;
+    if (rz > 9 || rz < -5) continue;
+    rim.push({ x: rx, z: rz });
+  }
+  if (rim.length) {
+    makeMoteField({
+      count: 24,
+      tex: softDot('rgba(255,250,226,0.95)', 'rgba(255,242,196,0.4)'),
+      area: { x: 14, y0: 0.4, y1: 2.8, z0: -5, z1: 9 },
+      sizeMin: 1, sizeMax: 2.6, alphaMin: 0.08, alphaMax: 0.26,
+      driftX: 0.5, driftY: 0.3, twinkle: 0.5, spots: rim,
+    });
+  }
+}
+
+// ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
 // Drop generated layer images into public/layers/ and they replace the
 // procedural stand-ins automatically:
@@ -1942,6 +2055,11 @@ function frame() {
 
   // ---- layer 5 atmosphere ----
   for (const m of moteFields) m.material.uniforms.uTime.value = t;
+  for (const p of sunPatches) {
+    const d = p.userData;
+    p.material.opacity = d.base * (0.6 + 0.4 * Math.sin(t * d.sp + d.ph));
+    p.position.x = d.x0 + Math.sin(t * d.sp * 0.8 + d.ph) * 0.5;
+  }
   for (const p of lightPockets) {
     p.material.opacity = p.userData.base * (0.55 + 0.45 * Math.sin(t * p.userData.sp + p.userData.ph));
   }
