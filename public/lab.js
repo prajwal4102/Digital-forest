@@ -24,6 +24,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+if (location.hash.includes('noshadow')) renderer.shadowMap.enabled = false; // debug
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.1;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -69,7 +70,8 @@ function radialTex(size, stops) {
 // ---------- forest floor contour (used by every layer) ----------
 // Very gentle woodland undulation; almost flat where the creatures walk.
 function groundHeight(x, z) {
-  const stage = clamp(1 - Math.hypot(x / 7.5, (z - 3) / 8.5), 0, 1);
+  const sx = x / 7.5, sz = (z - 3) / 8.5;
+  const stage = clamp(1 - (sx * sx + sz * sz), 0, 1); // smooth: no crease at x=0
   const amp = lerp(0.44, 0.05, stage);
   return (
     Math.sin(x * 0.17 + 1.3) * 0.55 +
@@ -352,6 +354,16 @@ const clouds = [];
     const out = c.getContext('2d');
     out.filter = 'blur(16px)';
     out.drawImage(sharp, 0, 0);
+    out.filter = 'none';
+    out.globalCompositeOperation = 'destination-out';
+    const edge = out.createLinearGradient(0, 0, cw, 0);
+    edge.addColorStop(0, 'rgba(0,0,0,1)');
+    edge.addColorStop(0.12, 'rgba(0,0,0,0)');
+    edge.addColorStop(0.88, 'rgba(0,0,0,0)');
+    edge.addColorStop(1, 'rgba(0,0,0,1)');
+    out.fillStyle = edge;
+    out.fillRect(0, 0, cw, ch);
+    out.globalCompositeOperation = 'source-over';
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(w2, w2 * (ch / cw) * 0.55),
       new THREE.MeshBasicMaterial({ map: canvasTex(c), transparent: true, opacity: o, depthWrite: false, fog: false }),
@@ -1234,44 +1246,48 @@ addWind(flowerMat, 1.2, 1.6);
   // ---------- THE FOREST FLOOR ----------
   // procedural woodland surface: fine blades, soil mottling, moss flecks
   const floorTexture = (() => {
-    const c = makeCanvas(1024, 1024);
+    const S = 1024;
+    const c = makeCanvas(S, S);
     const g = c.getContext('2d');
     g.fillStyle = '#5a7647';
-    g.fillRect(0, 0, 1024, 1024);
-    for (let i = 0; i < 420; i++) { // broad tonal drifts
-      g.fillStyle = pick(['#6b8c54', '#557444', '#74965c', '#4e6b3f', '#7d9a5f', '#63834e']);
-      g.globalAlpha = rand(0.12, 0.3);
-      g.beginPath();
-      g.ellipse(rand(0, 1024), rand(0, 1024), rand(30, 150), rand(24, 110), rand(0, TAU), 0, TAU);
-      g.fill();
-    }
-    for (let i = 0; i < 70; i++) { // warm bare earth
-      g.fillStyle = pick(['#7a6144', '#8a7150', '#6d573d', '#957d59']);
-      g.globalAlpha = rand(0.22, 0.55);
-      g.beginPath();
-      g.ellipse(rand(0, 1024), rand(0, 1024), rand(14, 62), rand(10, 42), rand(0, TAU), 0, TAU);
-      g.fill();
-    }
-    for (let i = 0; i < 90; i++) { // damp moss
-      g.fillStyle = pick(['#4f7a45', '#5c8a4c', '#456b3d']);
-      g.globalAlpha = rand(0.14, 0.34);
-      g.beginPath();
-      g.ellipse(rand(0, 1024), rand(0, 1024), rand(16, 70), rand(12, 48), rand(0, TAU), 0, TAU);
-      g.fill();
-    }
+    g.fillRect(0, 0, S, S);
+    // draw every mark wrapped across the canvas edges so the tile is seamless
+    const wrapDraw = (x, y, r, draw) => {
+      const xs = x < r ? [0, S] : x > S - r ? [0, -S] : [0];
+      const ys = y < r ? [0, S] : y > S - r ? [0, -S] : [0];
+      for (const ox of xs) for (const oy of ys) draw(x + ox, y + oy);
+    };
+    const blot = (n, colors, aLo, aHi, rLo, rHi) => {
+      for (let i = 0; i < n; i++) {
+        const x = rand(0, S), y = rand(0, S);
+        const rx = rand(rLo, rHi), ry = rx * rand(0.6, 0.95), rot = rand(0, TAU);
+        g.fillStyle = pick(colors);
+        g.globalAlpha = rand(aLo, aHi);
+        wrapDraw(x, y, rx, (px, py) => {
+          g.beginPath();
+          g.ellipse(px, py, rx, ry, rot, 0, TAU);
+          g.fill();
+        });
+      }
+    };
+    blot(420, ['#6b8c54', '#557444', '#74965c', '#4e6b3f', '#7d9a5f', '#63834e'], 0.12, 0.3, 30, 150);
+    blot(70, ['#7a6144', '#8a7150', '#6d573d', '#957d59'], 0.22, 0.55, 14, 62);
+    blot(90, ['#4f7a45', '#5c8a4c', '#456b3d'], 0.14, 0.34, 16, 70);
     g.globalAlpha = 1;
     for (let i = 0; i < 6500; i++) { // blades and leaf litter
-      const x = rand(0, 1024), y = rand(0, 1024);
+      const x = rand(0, S), y = rand(0, S);
       const warm = Math.random() < 0.12;
       g.strokeStyle = warm
         ? `rgba(${randInt(120, 165)},${randInt(95, 130)},${randInt(55, 85)},${rand(0.15, 0.4)})`
         : `rgba(${randInt(60, 130)},${randInt(95, 165)},${randInt(50, 100)},${rand(0.16, 0.45)})`;
       g.lineWidth = rand(0.8, 2.2);
       const a = rand(0, TAU), L = rand(3, 11);
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L);
-      g.stroke();
+      wrapDraw(x, y, L + 2, (px, py) => {
+        g.beginPath();
+        g.moveTo(px, py);
+        g.lineTo(px + Math.cos(a) * L, py + Math.sin(a) * L);
+        g.stroke();
+      });
     }
     const t = canvasTex(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -1311,7 +1327,8 @@ addWind(flowerMat, 1.2, 1.6);
         if (d < 1) near = Math.max(near, 1 - d);
       }
       col.lerp(cDeep, near * 0.72);
-      const stage = clamp(1 - Math.hypot(x / 7.5, (z - 3) / 8.5), 0, 1);
+      const sx2 = x / 7.5, sz2 = (z - 3) / 8.5;
+      const stage = clamp(1 - (sx2 * sx2 + sz2 * sz2), 0, 1);
       col.lerp(cLush, stage * 0.22); // the walked centre reads lighter
       col.lerp(cHaze, clamp((-z - 22) / 55, 0, 0.85)); // melt into the horizon
       cols.push(col.r, col.g, col.b);
@@ -1474,6 +1491,141 @@ addWind(flowerMat, 1.2, 1.6);
         rand(0.1, 0.16), 0.022, 6);
       // vegetation tucked against the root so it never reads as a bare tube
       grassInto(grassA, hb.x + dx * ext * rand(0.5, 0.95), hb.z + dz * ext * rand(0.5, 0.95), rand(0.25, 0.4), randInt(4, 8));
+    }
+  }
+
+  // ==========================================================
+  // LAYER 7 — UNDERSTORY & FOREST PROPS
+  // ==========================================================
+
+  // a branch or twig lying on the floor, gently bent, with an odd stub
+  function branchInto(A, wx, wz, len, thick) {
+    const a = rand(0, TAU);
+    const dx = Math.cos(a), dz = Math.sin(a);
+    const pts = [];
+    const bend = rand(-0.16, 0.16);
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      const px = wx + dx * len * (t - 0.5) - dz * Math.sin(t * Math.PI) * bend;
+      const pz = wz + dz * len * (t - 0.5) + dx * Math.sin(t * Math.PI) * bend;
+      pts.push(new THREE.Vector3(px, groundHeight(px, pz) + thick * rand(0.75, 1.05), pz));
+    }
+    tubeInto(A, pts, thick, thick * rand(0.35, 0.6), 6);
+    if (Math.random() < 0.55) { // a small side stub
+      const p0 = pts[randInt(1, 3)];
+      const sa = a + rand(0.7, 2.4) * pick([-1, 1]);
+      const sl = len * rand(0.16, 0.32);
+      tubeInto(A, [p0, new THREE.Vector3(
+        p0.x + Math.cos(sa) * sl, p0.y + rand(0.02, 0.1), p0.z + Math.sin(sa) * sl)],
+        thick * 0.5, thick * 0.16, 5);
+    }
+  }
+
+  // leaves that have already fallen, lying tilted on the floor
+  function fallenLeafInto(A, wx, wz, s2) {
+    const gy = groundHeight(wx, wz);
+    const col = new THREE.Color().setHSL(rand(0.13, 0.28), rand(0.25, 0.5), rand(0.34, 0.52));
+    for (let i = 0, n = randInt(1, 3); i < n; i++) {
+      cardInto(A,
+        new THREE.Vector3(wx + rand(-0.35, 0.35), gy + rand(0.02, 0.07), wz + rand(-0.35, 0.35)),
+        s2 * rand(0.8, 1.25),
+        new THREE.Vector3(rand(-0.5, 0.5), rand(0.75, 1), rand(0.15, 0.6)).normalize(),
+        col.clone().offsetHSL(0, 0, rand(-0.05, 0.06)), randInt(0, 3));
+    }
+  }
+
+  // a scatter helper biased to one side of the clearing
+  function sideSpots(side, n, zLo, zHi, inner, outer) {
+    const out = [];
+    let guard = 0;
+    while (out.length < n && guard++ < n * 50) {
+      const z = rand(zLo, zHi);
+      const xb = xBound(z);
+      const x = side * rand(inner, outer) * xb;
+      if (Math.abs(x) < 3.4 && z > -1) continue; // never block the stage
+      out.push({ x, z });
+    }
+    return out;
+  }
+  const depthScale = (z) => lerp(1.15, 0.45, clamp((6 - z) / 16, 0, 1));
+
+  // --- LEFT SIDE: ferns, stones and fallen branches ---
+  for (const p of sideSpots(-1, 5, -6, 9, 0.42, 0.95)) {
+    const k = depthScale(p.z);
+    for (let i = 0, n = randInt(2, 4); i < n; i++) {
+      const fx = p.x + rand(-0.8, 0.8), fz = p.z + rand(-0.6, 0.6);
+      const fern = makeGroundFern(rand(0.45, 0.95) * k);
+      fern.position.set(fx, groundHeight(fx, fz), fz);
+      fern.rotation.y = rand(0, TAU);
+      midTrees.push(Object.assign(fern, { userData: { swayAmp: rand(0.006, 0.012), swaySpeed: rand(0.3, 0.6), phase: rand(0, TAU) } }));
+      scene.add(fern);
+    }
+  }
+  for (const p of sideSpots(-1, 6, -5, 9.5, 0.4, 1)) {
+    const k = depthScale(p.z);
+    branchInto(rootA, p.x, p.z, rand(0.9, 2.1) * k, rand(0.045, 0.085) * k);
+    grassInto(grassA, p.x + rand(-0.5, 0.5), p.z + rand(-0.4, 0.4), rand(0.2, 0.4) * k, randInt(4, 9));
+  }
+
+  // --- RIGHT SIDE: low bushes, mossy stones and flowers ---
+  for (const p of sideSpots(1, 5, -6, 9, 0.45, 0.95)) {
+    const k = depthScale(p.z);
+    const bush = makeBush(rand(0.5, 0.95) * k);
+    bush.position.set(p.x, groundHeight(p.x, p.z), p.z);
+    bush.rotation.y = rand(0, TAU);
+    midTrees.push(Object.assign(bush, { userData: { swayAmp: rand(0.004, 0.008), swaySpeed: rand(0.25, 0.5), phase: rand(0, TAU) } }));
+    scene.add(bush);
+  }
+  for (const p of sideSpots(1, 7, -5, 9.5, 0.42, 1)) {
+    const k = depthScale(p.z);
+    const g2 = new THREE.Group();
+    g2.position.set(p.x, groundHeight(p.x, p.z), p.z);
+    scene.add(g2);
+    rockSpots.push({ g: g2, s: rand(0.09, 0.24) * k });
+    if (Math.random() < 0.6) { // moss creeping over the stone
+      blobInto(propA, new THREE.Vector3(p.x + rand(-0.1, 0.1), groundHeight(p.x, p.z) + rand(0.05, 0.14) * k, p.z + rand(-0.1, 0.1)),
+        rand(0.08, 0.17) * k, new THREE.Vector3(1.4, 0.5, 1.4),
+        new THREE.Color(0x557f3d).offsetHSL(0, rand(-0.05, 0.05), rand(-0.04, 0.03)));
+    }
+    if (Math.random() < 0.5) flowerInto(flowerA, grassA, p.x + rand(-0.6, 0.6), p.z + rand(-0.5, 0.5), rand(0.13, 0.24) * k);
+  }
+
+  // --- foreground corners: leaves, grass and a stray twig ---
+  for (const side of [-1, 1]) {
+    for (const p of sideSpots(side, 7, 6.5, 10, 0.35, 1)) {
+      const k = depthScale(p.z);
+      fallenLeafInto(plantA, p.x, p.z, rand(0.16, 0.3) * k);
+      grassInto(grassA, p.x + rand(-0.4, 0.4), p.z, rand(0.24, 0.46) * k, randInt(4, 10));
+    }
+    branchInto(rootA, side * rand(0.45, 0.85) * xBound(8.5), rand(7.5, 9.5), rand(1.1, 1.9), rand(0.05, 0.09));
+  }
+
+  // --- general scatter: debris, leaves, plants, mushrooms, stones ---
+  for (const p of clearingSpots(46)) {
+    const k = depthScale(p.z);
+    branchInto(rootA, p.x, p.z, rand(0.22, 0.6) * k, rand(0.018, 0.035) * k); // twigs & debris
+  }
+  for (const p of clearingSpots(26)) fallenLeafInto(plantA, p.x, p.z, rand(0.12, 0.24) * depthScale(p.z));
+  for (const p of clearingSpots(18)) plantInto(plantA, p.x, p.z, rand(0.26, 0.55) * depthScale(p.z));
+  for (const p of clearingSpots(9)) mushroomInto(propA, p.x, p.z, rand(0.14, 0.26) * depthScale(p.z));
+  for (const p of clearingSpots(10)) flowerInto(flowerA, grassA, p.x, p.z, rand(0.14, 0.27) * depthScale(p.z));
+  for (const p of clearingSpots(40)) {
+    const k = depthScale(p.z);
+    grassInto(grassA, p.x, p.z, rand(0.18, 0.4) * k, randInt(3, 8));
+  }
+  // small root sections easing out of a few mid-distance trunks
+  for (const b of treeBases) {
+    if (b.r > 1.2 || Math.random() < 0.72) continue;
+    for (let i = 0, n = randInt(1, 2); i < n; i++) {
+      const a = rand(0, TAU);
+      if (Math.abs(b.x + Math.cos(a)) < 3.2) continue; // keep clear of the stage
+      const ext = rand(0.7, 1.4);
+      const rp = (t2, h) => {
+        const px = b.x + Math.cos(a) * ext * t2, pz = b.z + Math.sin(a) * ext * t2 * 0.8;
+        return new THREE.Vector3(px, groundHeight(px, pz) + h, pz);
+      };
+      tubeInto(rootA, [rp(0.1, 0.16), rp(0.45, 0.09), rp(0.78, 0.05), rp(1, 0.02)],
+        rand(0.05, 0.09), 0.015, 5);
     }
   }
 
