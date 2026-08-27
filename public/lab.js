@@ -66,6 +66,20 @@ function radialTex(size, stops) {
   return canvasTex(c);
 }
 
+// ---------- forest floor contour (used by every layer) ----------
+// Very gentle woodland undulation; almost flat where the creatures walk.
+function groundHeight(x, z) {
+  const stage = clamp(1 - Math.hypot(x / 7.5, (z - 3) / 8.5), 0, 1);
+  const amp = lerp(0.44, 0.05, stage);
+  return (
+    Math.sin(x * 0.17 + 1.3) * 0.55 +
+    Math.cos(z * 0.21 - 0.7) * 0.45 +
+    Math.sin((x + z) * 0.33) * 0.22 +
+    Math.sin(x * 0.62) * Math.cos(z * 0.55) * 0.16
+  ) * amp * 0.5;
+}
+const treeBases = []; // every trunk, so the floor can be tucked around them
+
 // ============================================================
 // LAYER 1 — DEEP BACKGROUND
 // ============================================================
@@ -114,13 +128,15 @@ scene.fog = new THREE.FogExp2(0xbcd9c2, 0.009);
 scene.add(new THREE.HemisphereLight(0xcfe6f2, 0x55795a, 1.2));
 scene.add(new THREE.AmbientLight(0x86b088, 0.55));
 const sun = new THREE.DirectionalLight(0xfff0c2, 1.6);
-sun.position.set(0, 15, -31); // zero sideways lean: left and right lit identically
+sun.position.set(0, 26, -20); // zero sideways lean: left and right lit identically
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -24; sun.shadow.camera.right = 24;
-sun.shadow.camera.top = 24; sun.shadow.camera.bottom = -12;
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 90;
-sun.shadow.bias = -0.0015;
+sun.shadow.camera.left = -42; sun.shadow.camera.right = 42;
+sun.shadow.camera.top = 42; sun.shadow.camera.bottom = -38;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 120;
+sun.shadow.bias = -0.001;
+sun.shadow.normalBias = 0.05;
+sun.shadow.radius = 2.5; // diffuse, woodland-soft edges
 scene.add(sun);
 // soft fill from behind the camera so camera-facing foliage never goes murky
 const fill = new THREE.DirectionalLight(0xd8f2dc, 0.9);
@@ -796,10 +812,14 @@ function makeTree3D(tier) {
   }
 
   const woodMesh = new THREE.Mesh(buildGeo(wood), woodMat);
-  woodMesh.castShadow = false; // shadows return with the real ground layer
+  woodMesh.castShadow = true;
   g2.add(woodMesh);
-  g2.add(new THREE.Mesh(buildGeo(core), coreMat));
-  g2.add(new THREE.Mesh(buildGeo(cards), leafMat));
+  const coreMesh = new THREE.Mesh(buildGeo(core), coreMat);
+  coreMesh.castShadow = true;
+  g2.add(coreMesh);
+  const leafMesh = new THREE.Mesh(buildGeo(cards), leafMat);
+  leafMesh.castShadow = true;
+  g2.add(leafMesh);
   return g2;
 }
 
@@ -821,8 +841,9 @@ const midTrees = [];
       const minX = [2.2, 4.5, 7.5][tier]; // keep the central stage open
       if (Math.abs(x) < minX) x = Math.sign(x || 1) * (minX + rand(0, 1.5));
       const tree = makeTree3D(tier);
-      tree.position.set(x, 0, z);
+      tree.position.set(x, groundHeight(x, z), z);
       tree.rotation.y = rand(0, TAU);
+      treeBases.push({ x, z, r: [0.5, 0.75, 1][tier] });
       tree.userData = { swayAmp: rand(0.003, 0.008), swaySpeed: rand(0.3, 0.6), phase: rand(0, TAU) };
       midTrees.push(tree);
       scene.add(tree);
@@ -868,7 +889,7 @@ function makeGroundFern(s2) {
 
 {
   const place3 = (obj, x, z, amp) => {
-    obj.position.set(x, 0, z);
+    obj.position.set(x, groundHeight(x, z), z);
     obj.userData = { swayAmp: amp, swaySpeed: rand(0.25, 0.5), phase: rand(0, TAU) };
     midTrees.push(obj);
     scene.add(obj);
@@ -887,6 +908,7 @@ function makeGroundFern(s2) {
     const tB = makeTree3D(3);
     tB.rotation.y = rand(0, TAU);
     place3(tB, xB, zB, rand(0.002, 0.004));
+    treeBases.push({ x: xA, z: zA, r: 1.5 }, { x: xB, z: zB, r: 1.5 });
     heroBases.push({ x: xA, z: zA }, { x: xB, z: zB });
     // secondary tree tucked behind the heroes
     if (Math.random() < 0.85) {
@@ -1065,6 +1087,7 @@ function makeVine(len) {
 {
   const place4 = (obj, x, z, amp) => {
     obj.position.x = x;
+    obj.position.y = groundHeight(x, z);
     obj.position.z = z;
     if (amp) {
       obj.userData = { swayAmp: amp, swaySpeed: rand(0.3, 0.7), phase: rand(0, TAU) };
@@ -1208,6 +1231,100 @@ addWind(bigLeafMat, 0.9, 1.2);
 addWind(flowerMat, 1.2, 1.6);
 
 {
+  // ---------- THE FOREST FLOOR ----------
+  // procedural woodland surface: fine blades, soil mottling, moss flecks
+  const floorTexture = (() => {
+    const c = makeCanvas(1024, 1024);
+    const g = c.getContext('2d');
+    g.fillStyle = '#5a7647';
+    g.fillRect(0, 0, 1024, 1024);
+    for (let i = 0; i < 420; i++) { // broad tonal drifts
+      g.fillStyle = pick(['#6b8c54', '#557444', '#74965c', '#4e6b3f', '#7d9a5f', '#63834e']);
+      g.globalAlpha = rand(0.12, 0.3);
+      g.beginPath();
+      g.ellipse(rand(0, 1024), rand(0, 1024), rand(30, 150), rand(24, 110), rand(0, TAU), 0, TAU);
+      g.fill();
+    }
+    for (let i = 0; i < 70; i++) { // warm bare earth
+      g.fillStyle = pick(['#7a6144', '#8a7150', '#6d573d', '#957d59']);
+      g.globalAlpha = rand(0.22, 0.55);
+      g.beginPath();
+      g.ellipse(rand(0, 1024), rand(0, 1024), rand(14, 62), rand(10, 42), rand(0, TAU), 0, TAU);
+      g.fill();
+    }
+    for (let i = 0; i < 90; i++) { // damp moss
+      g.fillStyle = pick(['#4f7a45', '#5c8a4c', '#456b3d']);
+      g.globalAlpha = rand(0.14, 0.34);
+      g.beginPath();
+      g.ellipse(rand(0, 1024), rand(0, 1024), rand(16, 70), rand(12, 48), rand(0, TAU), 0, TAU);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    for (let i = 0; i < 6500; i++) { // blades and leaf litter
+      const x = rand(0, 1024), y = rand(0, 1024);
+      const warm = Math.random() < 0.12;
+      g.strokeStyle = warm
+        ? `rgba(${randInt(120, 165)},${randInt(95, 130)},${randInt(55, 85)},${rand(0.15, 0.4)})`
+        : `rgba(${randInt(60, 130)},${randInt(95, 165)},${randInt(50, 100)},${rand(0.16, 0.45)})`;
+      g.lineWidth = rand(0.8, 2.2);
+      const a = rand(0, TAU), L = rand(3, 11);
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L);
+      g.stroke();
+    }
+    const t = canvasTex(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(62, 46);
+    return t;
+  })();
+
+  {
+    const geo = new THREE.PlaneGeometry(240, 170, 104, 76);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, 0, -70);
+    const pos = geo.attributes.position;
+    const cols = [];
+    const cGrass = new THREE.Color(0x6f9455);
+    const cLush = new THREE.Color(0x87b167);
+    const cOlive = new THREE.Color(0x6a7b45);
+    const cDeep = new THREE.Color(0x3f5c37);
+    const cEarth = new THREE.Color(0x8a7051);
+    const cHaze = new THREE.Color(0xcfe0b0);
+    const col = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      pos.setY(i, groundHeight(x, z));
+      const n1 = Math.sin(x * 0.13 + 2.1) * Math.cos(z * 0.11 - 1.4);
+      const n2 = Math.sin(x * 0.41 - 0.6) * Math.sin(z * 0.37 + 2.2);
+      const n3 = Math.sin(x * 0.07 - 1.1) * Math.cos(z * 0.063 + 0.5);
+      col.copy(cGrass).lerp(cLush, clamp(0.5 + n1 * 0.6, 0, 1));
+      col.lerp(cOlive, clamp(0.35 + n3 * 0.65, 0, 0.55)); // broad olive drifts
+      if (n2 > 0.42) col.lerp(cEarth, clamp((n2 - 0.42) * 1.5, 0, 0.62)); // bare soil
+      let near = 0; // shade and thicken under the trees
+      for (const b of treeBases) {
+        const dx = x - b.x;
+        if (dx > 9 || dx < -9) continue;
+        const dz = z - b.z;
+        if (dz > 9 || dz < -9) continue;
+        const d = Math.hypot(dx, dz) / (b.r * 4.5 + 2.5);
+        if (d < 1) near = Math.max(near, 1 - d);
+      }
+      col.lerp(cDeep, near * 0.72);
+      const stage = clamp(1 - Math.hypot(x / 7.5, (z - 3) / 8.5), 0, 1);
+      col.lerp(cLush, stage * 0.22); // the walked centre reads lighter
+      col.lerp(cHaze, clamp((-z - 22) / 55, 0, 0.85)); // melt into the horizon
+      cols.push(col.r, col.g, col.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+    geo.computeVertexNormals();
+    const floor = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      map: floorTexture, vertexColors: true, roughness: 1, metalness: 0,
+    }));
+    floor.receiveShadow = true;
+    scene.add(floor);
+  }
+
   const grassA = geoArrays();   // blades
   const plantA = geoArrays();   // broad-leaf shoots
   const flowerA = geoArrays();  // blossom cards
@@ -1216,6 +1333,7 @@ addWind(flowerMat, 1.2, 1.6);
 
   // --- blades of grass at a world spot ---
   function grassInto(A, wx, wz, s2, blades) {
+    const gy = groundHeight(wx, wz);
     const col = new THREE.Color(pick([0x5f9a4a, 0x6fae57, 0x7fae63, 0x55904a, 0x86b866]));
     for (let i = 0; i < blades; i++) {
       const a = rand(0, TAU);
@@ -1228,14 +1346,14 @@ addWind(flowerMat, 1.2, 1.6);
       const start = A.pos.length / 3;
       const c = col.clone().multiplyScalar(rand(0.85, 1.12));
       const verts = [
-        [bx - px * w, 0, bz - pz * w],
-        [bx + px * w, 0, bz + pz * w],
-        [bx - px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz - pz * w * 0.5 + dz * hgt * 0.6],
-        [bx + px * w * 0.5 + dx * hgt * 0.6, hgt * 0.6, bz + pz * w * 0.5 + dz * hgt * 0.6],
-        [bx + dx * hgt, hgt, bz + dz * hgt],
+        [bx - px * w, gy, bz - pz * w],
+        [bx + px * w, gy, bz + pz * w],
+        [bx - px * w * 0.5 + dx * hgt * 0.6, gy + hgt * 0.6, bz - pz * w * 0.5 + dz * hgt * 0.6],
+        [bx + px * w * 0.5 + dx * hgt * 0.6, gy + hgt * 0.6, bz + pz * w * 0.5 + dz * hgt * 0.6],
+        [bx + dx * hgt, gy + hgt, bz + dz * hgt],
       ];
       for (const [X, Y, Z] of verts) {
-        const sh = 0.72 + (Y / hgt) * 0.38;
+        const sh = 0.72 + ((Y - gy) / hgt) * 0.38;
         A.pos.push(X, Y, Z);
         A.norm.push(0, 0.45, 0.89);
         A.col.push(c.r * sh, c.g * sh, c.b * sh);
@@ -1246,6 +1364,7 @@ addWind(flowerMat, 1.2, 1.6);
 
   // --- low broad-leaf shoot ---
   function plantInto(A, wx, wz, s2) {
+    const gy = groundHeight(wx, wz);
     const col = new THREE.Color(pick([0x4f9a55, 0x5faa62, 0x6fae57, 0x479366]));
     const n = randInt(4, 7);
     for (let i = 0; i < n; i++) {
@@ -1253,7 +1372,7 @@ addWind(flowerMat, 1.2, 1.6);
       const out = rand(0.25, 0.55);
       const dir = new THREE.Vector3(Math.cos(a) * out, rand(0.55, 1), Math.sin(a) * out).normalize();
       cardInto(A,
-        new THREE.Vector3(wx + Math.cos(a) * s2 * rand(0.12, 0.4), s2 * rand(0.2, 0.5), wz + Math.sin(a) * s2 * rand(0.12, 0.4)),
+        new THREE.Vector3(wx + Math.cos(a) * s2 * rand(0.12, 0.4), gy + s2 * rand(0.2, 0.5), wz + Math.sin(a) * s2 * rand(0.12, 0.4)),
         s2 * rand(0.5, 0.85), dir,
         col.clone().offsetHSL(0, rand(-0.04, 0.04), rand(-0.04, 0.05)).multiplyScalar(rand(0.85, 1.08)),
         randInt(0, 3));
@@ -1263,11 +1382,12 @@ addWind(flowerMat, 1.2, 1.6);
   // --- one wildflower: a blossom or two facing the viewer, on a blade stem ---
   const FLOWER_COLS = [0xfff2a8, 0xffffff, 0xffd9e4, 0xcfe3ff, 0xfff6cf];
   function flowerInto(A, gA, wx, wz, s2) {
+    const gy = groundHeight(wx, wz);
     const col = new THREE.Color(pick(FLOWER_COLS));
     grassInto(gA, wx, wz, s2 * 1.5, randInt(2, 4)); // green stems / leaves at its foot
     for (let i = 0, n = randInt(1, 3); i < n; i++) {
       cardInto(A,
-        new THREE.Vector3(wx + rand(-0.1, 0.1), s2 * rand(0.6, 1.1), wz + rand(-0.1, 0.1)),
+        new THREE.Vector3(wx + rand(-0.1, 0.1), gy + s2 * rand(0.6, 1.1), wz + rand(-0.1, 0.1)),
         s2 * rand(0.5, 0.8),
         new THREE.Vector3(rand(-0.35, 0.35), rand(0.35, 0.7), 1).normalize(),
         col.clone().multiplyScalar(rand(0.92, 1)), randInt(0, 3));
@@ -1276,11 +1396,12 @@ addWind(flowerMat, 1.2, 1.6);
 
   // --- small friendly mushroom ---
   function mushroomInto(A, wx, wz, s2) {
+    const gy = groundHeight(wx, wz);
     const stem = new THREE.Color(pick([0xefe4cd, 0xe6dcc2, 0xf3ead6]));
     const cap = new THREE.Color(pick([0xc98f6a, 0xb87b5c, 0xd8a679, 0xa9755a]));
-    blobInto(A, new THREE.Vector3(wx, s2 * 0.34, wz), s2 * 0.17,
+    blobInto(A, new THREE.Vector3(wx, gy + s2 * 0.34, wz), s2 * 0.17,
       new THREE.Vector3(0.55, 2.1, 0.55), stem);
-    blobInto(A, new THREE.Vector3(wx, s2 * 0.62, wz), s2 * 0.34,
+    blobInto(A, new THREE.Vector3(wx, gy + s2 * 0.62, wz), s2 * 0.34,
       new THREE.Vector3(1.2, 0.55, 1.2), cap);
   }
 
@@ -1302,6 +1423,30 @@ addWind(flowerMat, 1.2, 1.6);
   for (const p of clearingSpots(72)) {
     grassInto(grassA, p.x, p.z, rand(0.22, 0.5), Math.random() < 0.35 ? randInt(2, 3) : randInt(5, 11));
   }
+  // a soft carpet of short grass over the visible floor — sparse and low in
+  // the middle, thicker toward the trees, so no patch reads as bare
+  for (let i = 0; i < 380; i++) {
+    const z = rand(-14, 10.5);
+    const x = rand(-1, 1) * xBound(z) * 1.05;
+    const stage = clamp(1 - Math.hypot(x / 6.5, (z - 3) / 7.5), 0, 1);
+    if (Math.random() < stage * 0.7) continue;
+    grassInto(grassA, x, z, rand(0.13, 0.3) * (1 - stage * 0.45), randInt(2, 6));
+  }
+  // every trunk gets grass and moss tucked against its base
+  for (const b of treeBases) {
+    const ring = Math.round(randInt(3, 6) * b.r);
+    for (let i = 0; i < ring; i++) {
+      const a = rand(0, TAU), rr = b.r * rand(0.7, 1.9);
+      grassInto(grassA, b.x + Math.cos(a) * rr, b.z + Math.sin(a) * rr, rand(0.2, 0.42) * b.r, randInt(4, 9));
+    }
+    for (let i = 0, n = randInt(1, 3); i < n; i++) {
+      const a = rand(0, TAU), rr = b.r * rand(0.4, 1.3);
+      const mx = b.x + Math.cos(a) * rr, mz = b.z + Math.sin(a) * rr;
+      blobInto(propA, new THREE.Vector3(mx, groundHeight(mx, mz) + 0.03, mz),
+        b.r * rand(0.28, 0.5), new THREE.Vector3(1.5, 0.16, 1.5),
+        new THREE.Color(0x557f3d).offsetHSL(0, rand(-0.05, 0.05), rand(-0.05, 0.03)));
+    }
+  }
   for (const p of clearingSpots(26)) plantInto(plantA, p.x, p.z, rand(0.3, 0.62));
   for (const p of clearingSpots(20)) flowerInto(flowerA, grassA, p.x, p.z, rand(0.16, 0.3));
   for (const p of clearingSpots(11)) mushroomInto(propA, p.x, p.z, rand(0.16, 0.3));
@@ -1309,7 +1454,7 @@ addWind(flowerMat, 1.2, 1.6);
   // --- a few tiny stones (scanned models fill these too) ---
   for (const p of clearingSpots(8)) {
     const g2 = new THREE.Group();
-    g2.position.set(p.x, 0, p.z);
+    g2.position.set(p.x, groundHeight(p.x, p.z), p.z);
     scene.add(g2);
     rockSpots.push({ g: g2, s: rand(0.07, 0.16) });
   }
@@ -1321,13 +1466,12 @@ addWind(flowerMat, 1.2, 1.6);
       const a = rand(-0.9, 0.9) + (away > 0 ? 0 : Math.PI); // never reach across the centre
       const dx = Math.cos(a), dz = Math.sin(a) * 0.8;
       const ext = rand(1.1, 2.3);
-      rootA.pos.length; // (arrays reused below)
-      tubeInto(rootA, [
-        new THREE.Vector3(hb.x + dx * 0.15, 0.34, hb.z + dz * 0.15),
-        new THREE.Vector3(hb.x + dx * ext * 0.4, 0.17, hb.z + dz * ext * 0.4),
-        new THREE.Vector3(hb.x + dx * ext * 0.75, 0.08, hb.z + dz * ext * 0.75),
-        new THREE.Vector3(hb.x + dx * ext, 0.03, hb.z + dz * ext),
-      ], rand(0.1, 0.16), 0.022, 6);
+      const rp = (t2, h) => new THREE.Vector3(
+        hb.x + dx * ext * t2,
+        groundHeight(hb.x + dx * ext * t2, hb.z + dz * ext * t2) + h,
+        hb.z + dz * ext * t2);
+      tubeInto(rootA, [rp(0.07, 0.34), rp(0.4, 0.17), rp(0.75, 0.08), rp(1, 0.03)],
+        rand(0.1, 0.16), 0.022, 6);
       // vegetation tucked against the root so it never reads as a bare tube
       grassInto(grassA, hb.x + dx * ext * rand(0.5, 0.95), hb.z + dz * ext * rand(0.5, 0.95), rand(0.25, 0.4), randInt(4, 8));
     }
