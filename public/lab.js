@@ -1270,9 +1270,9 @@ addWind(flowerMat, 1.2, 1.6);
         });
       }
     };
-    blot(420, ['#6b8c54', '#557444', '#74965c', '#4e6b3f', '#7d9a5f', '#63834e'], 0.12, 0.3, 30, 150);
-    blot(70, ['#7a6144', '#8a7150', '#6d573d', '#957d59'], 0.22, 0.55, 14, 62);
-    blot(90, ['#4f7a45', '#5c8a4c', '#456b3d'], 0.14, 0.34, 16, 70);
+    blot(420, ['#6b8c54', '#557444', '#74965c', '#4e6b3f', '#7d9a5f', '#63834e'], 0.07, 0.15, 30, 150);
+    blot(70, ['#7a6144', '#8a7150', '#6d573d', '#957d59'], 0.08, 0.18, 14, 62);
+    blot(90, ['#4f7a45', '#5c8a4c', '#456b3d'], 0.07, 0.16, 16, 70);
     g.globalAlpha = 1;
     for (let i = 0; i < 6500; i++) { // blades and leaf litter
       const x = rand(0, S), y = rand(0, S);
@@ -1316,7 +1316,7 @@ addWind(flowerMat, 1.2, 1.6);
       const n3 = Math.sin(x * 0.07 - 1.1) * Math.cos(z * 0.063 + 0.5);
       col.copy(cGrass).lerp(cLush, clamp(0.5 + n1 * 0.6, 0, 1));
       col.lerp(cOlive, clamp(0.35 + n3 * 0.65, 0, 0.55)); // broad olive drifts
-      if (n2 > 0.42) col.lerp(cEarth, clamp((n2 - 0.42) * 1.5, 0, 0.62)); // bare soil
+      if (n2 > 0.72) col.lerp(cEarth, clamp((n2 - 0.72) * 1.1, 0, 0.22)); // faint bare soil
       let near = 0; // shade and thicken under the trees
       for (const b of treeBases) {
         const dx = x - b.x;
@@ -1437,17 +1437,13 @@ addWind(flowerMat, 1.2, 1.6);
     return out;
   }
 
-  for (const p of clearingSpots(72)) {
-    grassInto(grassA, p.x, p.z, rand(0.22, 0.5), Math.random() < 0.35 ? randInt(2, 3) : randInt(5, 11));
-  }
-  // a soft carpet of short grass over the visible floor — sparse and low in
-  // the middle, thicker toward the trees, so no patch reads as bare
-  for (let i = 0; i < 380; i++) {
-    const z = rand(-14, 10.5);
-    const x = rand(-1, 1) * xBound(z) * 1.05;
-    const stage = clamp(1 - Math.hypot(x / 6.5, (z - 3) / 7.5), 0, 1);
-    if (Math.random() < stage * 0.7) continue;
-    grassInto(grassA, x, z, rand(0.13, 0.3) * (1 - stage * 0.45), randInt(2, 6));
+  // grass grows in tight clumps — a lone blade on open ground reads as a glitch
+  for (const p of clearingSpots(40)) {
+    if (p.d < 1.25) continue; // well clear of the stage
+    for (let i = 0, n = randInt(3, 6); i < n; i++) {
+      grassInto(grassA, p.x + rand(-0.4, 0.4), p.z + rand(-0.32, 0.32),
+        rand(0.26, 0.5), randInt(7, 13));
+    }
   }
   // every trunk gets grass and moss tucked against its base
   for (const b of treeBases) {
@@ -1464,12 +1460,13 @@ addWind(flowerMat, 1.2, 1.6);
         new THREE.Color(0x557f3d).offsetHSL(0, rand(-0.05, 0.05), rand(-0.05, 0.03)));
     }
   }
-  for (const p of clearingSpots(26)) plantInto(plantA, p.x, p.z, rand(0.3, 0.62));
-  for (const p of clearingSpots(20)) flowerInto(flowerA, grassA, p.x, p.z, rand(0.16, 0.3));
-  for (const p of clearingSpots(11)) mushroomInto(propA, p.x, p.z, rand(0.16, 0.3));
+  for (const p of clearingSpots(20)) { if (p.d < 1.3) continue; plantInto(plantA, p.x, p.z, rand(0.3, 0.62)); }
+  for (const p of clearingSpots(14)) { if (p.d < 1.35) continue; flowerInto(flowerA, grassA, p.x, p.z, rand(0.14, 0.24)); }
+  for (const p of clearingSpots(7)) { if (p.d < 1.45) continue; mushroomInto(propA, p.x, p.z, rand(0.12, 0.19)); }
 
   // --- a few tiny stones (scanned models fill these too) ---
-  for (const p of clearingSpots(8)) {
+  for (const p of clearingSpots(6)) {
+    if (p.d < 1.4) continue;
     const g2 = new THREE.Group();
     g2.position.set(p.x, groundHeight(p.x, p.z), p.z);
     scene.add(g2);
@@ -1494,138 +1491,26 @@ addWind(flowerMat, 1.2, 1.6);
     }
   }
 
-  // ==========================================================
-  // LAYER 7 — UNDERSTORY & FOREST PROPS
-  // ==========================================================
-
-  // a branch or twig lying on the floor, gently bent, with an odd stub
-  function branchInto(A, wx, wz, len, thick) {
-    const a = rand(0, TAU);
-    const dx = Math.cos(a), dz = Math.sin(a);
-    const pts = [];
-    const bend = rand(-0.16, 0.16);
-    for (let i = 0; i <= 4; i++) {
-      const t = i / 4;
-      const px = wx + dx * len * (t - 0.5) - dz * Math.sin(t * Math.PI) * bend;
-      const pz = wz + dz * len * (t - 0.5) + dx * Math.sin(t * Math.PI) * bend;
-      pts.push(new THREE.Vector3(px, groundHeight(px, pz) + thick * rand(0.75, 1.05), pz));
-    }
-    tubeInto(A, pts, thick, thick * rand(0.35, 0.6), 6);
-    if (Math.random() < 0.55) { // a small side stub
-      const p0 = pts[randInt(1, 3)];
-      const sa = a + rand(0.7, 2.4) * pick([-1, 1]);
-      const sl = len * rand(0.16, 0.32);
-      tubeInto(A, [p0, new THREE.Vector3(
-        p0.x + Math.cos(sa) * sl, p0.y + rand(0.02, 0.1), p0.z + Math.sin(sa) * sl)],
-        thick * 0.5, thick * 0.16, 5);
-    }
-  }
-
-  // leaves that have already fallen, lying tilted on the floor
-  function fallenLeafInto(A, wx, wz, s2) {
-    const gy = groundHeight(wx, wz);
-    const col = new THREE.Color().setHSL(rand(0.13, 0.28), rand(0.25, 0.5), rand(0.34, 0.52));
-    for (let i = 0, n = randInt(1, 3); i < n; i++) {
-      cardInto(A,
-        new THREE.Vector3(wx + rand(-0.35, 0.35), gy + rand(0.02, 0.07), wz + rand(-0.35, 0.35)),
-        s2 * rand(0.8, 1.25),
-        new THREE.Vector3(rand(-0.5, 0.5), rand(0.75, 1), rand(0.15, 0.6)).normalize(),
-        col.clone().offsetHSL(0, 0, rand(-0.05, 0.06)), randInt(0, 3));
-    }
-  }
-
-  // a scatter helper biased to one side of the clearing
-  function sideSpots(side, n, zLo, zHi, inner, outer) {
-    const out = [];
-    let guard = 0;
-    while (out.length < n && guard++ < n * 50) {
-      const z = rand(zLo, zHi);
-      const xb = xBound(z);
-      const x = side * rand(inner, outer) * xb;
-      if (Math.abs(x) < 3.4 && z > -1) continue; // never block the stage
-      out.push({ x, z });
-    }
-    return out;
-  }
-  const depthScale = (z) => lerp(1.15, 0.45, clamp((6 - z) / 16, 0, 1));
-
-  // --- LEFT SIDE: ferns, stones and fallen branches ---
-  for (const p of sideSpots(-1, 5, -6, 9, 0.42, 0.95)) {
-    const k = depthScale(p.z);
-    for (let i = 0, n = randInt(2, 4); i < n; i++) {
-      const fx = p.x + rand(-0.8, 0.8), fz = p.z + rand(-0.6, 0.6);
-      const fern = makeGroundFern(rand(0.45, 0.95) * k);
-      fern.position.set(fx, groundHeight(fx, fz), fz);
-      fern.rotation.y = rand(0, TAU);
-      midTrees.push(Object.assign(fern, { userData: { swayAmp: rand(0.006, 0.012), swaySpeed: rand(0.3, 0.6), phase: rand(0, TAU) } }));
-      scene.add(fern);
-    }
-  }
-  for (const p of sideSpots(-1, 6, -5, 9.5, 0.4, 1)) {
-    const k = depthScale(p.z);
-    branchInto(rootA, p.x, p.z, rand(0.9, 2.1) * k, rand(0.045, 0.085) * k);
-    grassInto(grassA, p.x + rand(-0.5, 0.5), p.z + rand(-0.4, 0.4), rand(0.2, 0.4) * k, randInt(4, 9));
-  }
-
-  // --- RIGHT SIDE: low bushes, mossy stones and flowers ---
-  for (const p of sideSpots(1, 5, -6, 9, 0.45, 0.95)) {
-    const k = depthScale(p.z);
-    const bush = makeBush(rand(0.5, 0.95) * k);
-    bush.position.set(p.x, groundHeight(p.x, p.z), p.z);
-    bush.rotation.y = rand(0, TAU);
-    midTrees.push(Object.assign(bush, { userData: { swayAmp: rand(0.004, 0.008), swaySpeed: rand(0.25, 0.5), phase: rand(0, TAU) } }));
-    scene.add(bush);
-  }
-  for (const p of sideSpots(1, 7, -5, 9.5, 0.42, 1)) {
-    const k = depthScale(p.z);
-    const g2 = new THREE.Group();
-    g2.position.set(p.x, groundHeight(p.x, p.z), p.z);
-    scene.add(g2);
-    rockSpots.push({ g: g2, s: rand(0.09, 0.24) * k });
-    if (Math.random() < 0.6) { // moss creeping over the stone
-      blobInto(propA, new THREE.Vector3(p.x + rand(-0.1, 0.1), groundHeight(p.x, p.z) + rand(0.05, 0.14) * k, p.z + rand(-0.1, 0.1)),
-        rand(0.08, 0.17) * k, new THREE.Vector3(1.4, 0.5, 1.4),
-        new THREE.Color(0x557f3d).offsetHSL(0, rand(-0.05, 0.05), rand(-0.04, 0.03)));
-    }
-    if (Math.random() < 0.5) flowerInto(flowerA, grassA, p.x + rand(-0.6, 0.6), p.z + rand(-0.5, 0.5), rand(0.13, 0.24) * k);
-  }
-
-  // --- foreground corners: leaves, grass and a stray twig ---
+  // a handful of fallen branches, each bedded into its own grass clump
   for (const side of [-1, 1]) {
-    for (const p of sideSpots(side, 7, 6.5, 10, 0.35, 1)) {
-      const k = depthScale(p.z);
-      fallenLeafInto(plantA, p.x, p.z, rand(0.16, 0.3) * k);
-      grassInto(grassA, p.x + rand(-0.4, 0.4), p.z, rand(0.24, 0.46) * k, randInt(4, 10));
-    }
-    branchInto(rootA, side * rand(0.45, 0.85) * xBound(8.5), rand(7.5, 9.5), rand(1.1, 1.9), rand(0.05, 0.09));
-  }
-
-  // --- general scatter: debris, leaves, plants, mushrooms, stones ---
-  for (const p of clearingSpots(46)) {
-    const k = depthScale(p.z);
-    branchInto(rootA, p.x, p.z, rand(0.22, 0.6) * k, rand(0.018, 0.035) * k); // twigs & debris
-  }
-  for (const p of clearingSpots(26)) fallenLeafInto(plantA, p.x, p.z, rand(0.12, 0.24) * depthScale(p.z));
-  for (const p of clearingSpots(18)) plantInto(plantA, p.x, p.z, rand(0.26, 0.55) * depthScale(p.z));
-  for (const p of clearingSpots(9)) mushroomInto(propA, p.x, p.z, rand(0.14, 0.26) * depthScale(p.z));
-  for (const p of clearingSpots(10)) flowerInto(flowerA, grassA, p.x, p.z, rand(0.14, 0.27) * depthScale(p.z));
-  for (const p of clearingSpots(40)) {
-    const k = depthScale(p.z);
-    grassInto(grassA, p.x, p.z, rand(0.18, 0.4) * k, randInt(3, 8));
-  }
-  // small root sections easing out of a few mid-distance trunks
-  for (const b of treeBases) {
-    if (b.r > 1.2 || Math.random() < 0.72) continue;
-    for (let i = 0, n = randInt(1, 2); i < n; i++) {
+    for (let k = 0, n = randInt(1, 2); k < n; k++) {
+      const z = rand(4, 9);
+      const x = side * rand(0.55, 0.92) * xBound(z);
+      const len = rand(1, 1.8), thick = rand(0.05, 0.08);
       const a = rand(0, TAU);
-      if (Math.abs(b.x + Math.cos(a)) < 3.2) continue; // keep clear of the stage
-      const ext = rand(0.7, 1.4);
-      const rp = (t2, h) => {
-        const px = b.x + Math.cos(a) * ext * t2, pz = b.z + Math.sin(a) * ext * t2 * 0.8;
-        return new THREE.Vector3(px, groundHeight(px, pz) + h, pz);
-      };
-      tubeInto(rootA, [rp(0.1, 0.16), rp(0.45, 0.09), rp(0.78, 0.05), rp(1, 0.02)],
-        rand(0.05, 0.09), 0.015, 5);
+      const dx = Math.cos(a), dz = Math.sin(a) * 0.7;
+      const pts = [];
+      for (let i = 0; i <= 4; i++) {
+        const t = i / 4;
+        const px = x + dx * len * (t - 0.5), pz = z + dz * len * (t - 0.5);
+        pts.push(new THREE.Vector3(px, groundHeight(px, pz) + thick * 0.85, pz));
+      }
+      tubeInto(rootA, pts, thick, thick * 0.45, 6);
+      for (let i = 0; i < 5; i++) { // grass growing up around it
+        const t = rand(0, 1);
+        grassInto(grassA, x + dx * len * (t - 0.5) + rand(-0.3, 0.3),
+          z + dz * len * (t - 0.5) + rand(-0.25, 0.25), rand(0.24, 0.42), randInt(6, 11));
+      }
     }
   }
 
