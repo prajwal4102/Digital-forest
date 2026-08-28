@@ -6,6 +6,8 @@
 
 import * as THREE from './vendor/three.module.js';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
+import { ForestMap } from './forest-map.js';
+import { AnimalManager } from './animals.js';
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -80,7 +82,11 @@ function groundHeight(x, z) {
     Math.sin(x * 0.62) * Math.cos(z * 0.55) * 0.16
   ) * amp * 0.5;
 }
-const treeBases = []; // every trunk, so the floor can be tucked around them
+const treeBases = [];
+// What the navigation grid will be built from. The forest places its props
+// wherever it likes; we just note where they landed.
+const navProps = [];
+const navProp = (x, z, r, kind) => { navProps.push({ x, z, r, kind }); return { x, z }; }; // every trunk, so the floor can be tucked around them
 // A/B switch: open /lab#nofocus to see the forest without the layer 9 focus
 const FOCUS = !location.hash.includes('nofocus');
 
@@ -937,10 +943,10 @@ function makeGroundFern(s2) {
       const a = rand(0, TAU);
       const fern = makeGroundFern(rand(0.9, 1.6));
       fern.rotation.y = rand(0, TAU);
-      place3(fern,
-        host.x + Math.cos(a) * rand(0.9, 2.4),
-        host.z + Math.sin(a) * rand(0.6, 1.6) + 0.5,
-        rand(0.004, 0.008));
+      const fx = host.x + Math.cos(a) * rand(0.9, 2.4);
+      const fz = host.z + Math.sin(a) * rand(0.6, 1.6) + 0.5;
+      place3(fern, fx, fz, rand(0.004, 0.008));
+      navProp(fx, fz, 0.7, 'fern');
     }
   }
 }
@@ -1114,14 +1120,22 @@ function makeVine(len) {
     const anyHero = heroes[0] || { x: side * 8, z: 4 };
     // natural shrubs settling into the lower corner
     const zf = rand(7.5, 9);
-    place4(makeBush(rand(1.2, 1.8)), side * xBound(zf) * rand(0.62, 0.88), zf, rand(0.004, 0.007));
-    place4(makeBush(rand(0.7, 1.1)), side * xBound(zf - 1.5) * rand(0.7, 0.95), zf - rand(1, 2), rand(0.004, 0.007));
+    const b1x = side * xBound(zf) * rand(0.62, 0.88);
+    place4(makeBush(rand(1.2, 1.8)), b1x, zf, rand(0.004, 0.007));
+    navProp(b1x, zf, 1.05, 'bush');
+    const b2z = zf - rand(1, 2), b2x = side * xBound(zf - 1.5) * rand(0.7, 0.95);
+    place4(makeBush(rand(0.7, 1.1)), b2x, b2z, rand(0.004, 0.007));
+    navProp(b2x, b2z, 0.75, 'bush');
     // and a smaller fern accent beside them
-    place4(makeGroundFern(rand(0.8, 1.2)), side * xBound(zf) * rand(0.5, 0.7), zf - rand(0, 1), rand(0.006, 0.01));
+    const f4z = zf - rand(0, 1), f4x = side * xBound(zf) * rand(0.5, 0.7);
+    place4(makeGroundFern(rand(0.8, 1.2)), f4x, f4z, rand(0.006, 0.01));
+    navProp(f4x, f4z, 0.6, 'fern');
     // wild grass around the hero bases
     for (let i = 0, n = randInt(3, 5); i < n; i++) {
       const hb = pick(heroes) || anyHero;
-      place4(makeGrassTuft(rand(0.35, 0.6)), hb.x + rand(-1.8, 1.8), hb.z + rand(-0.8, 1.6), 0);
+      const gx = hb.x + rand(-1.8, 1.8), gz = hb.z + rand(-0.8, 1.6);
+      place4(makeGrassTuft(rand(0.35, 0.6)), gx, gz, 0);
+      navProp(gx, gz, 0.5, 'grass');
     }
     // a few small rocks (filled with scanned models once they load)
     for (let i = 0, n = randInt(2, 3); i < n; i++) {
@@ -1972,6 +1986,52 @@ const sunPatches = [];
 }
 
 // ============================================================
+// THE LIVING FOREST — logical map + animals
+// The animals never read the picture. They read a grid built from where the
+// trunks, rocks and bushes actually stand, so the map cannot drift out of
+// step with what is on screen.
+// ============================================================
+
+const forestMap = new ForestMap({
+  cellSize: 0.4,
+  zMin: -9, zMax: 7.5,
+  xCap: 10,
+  halfWidth: xBound,
+  groundHeight,
+  edgeMargin: 0.86, // the animals keep clear of the framing foliage
+});
+
+{
+  const obstacles = [];
+  const interests = [];
+
+  for (const t of treeBases) obstacles.push({ x: t.x, z: t.z, r: t.r * 0.85 });
+  for (const p of navProps) {
+    if (p.kind === 'bush' || p.kind === 'fern') obstacles.push(p);
+    // the edge of a bush is worth a sniff even though its middle is solid
+    interests.push({ x: p.x, z: p.z, r: p.r + 0.85, kind: p.kind });
+  }
+  for (const spot of rockSpots) {
+    const p = spot.g.position;
+    obstacles.push({ x: p.x, z: p.z, r: Math.max(0.3, spot.s * 1.6) });
+    interests.push({ x: p.x, z: p.z, r: 0.9, kind: 'rock' });
+  }
+  for (const hb of heroBases) interests.push({ x: hb.x, z: hb.z + 1.4, r: 1, kind: 'roots' });
+
+  forestMap.build(obstacles, interests, 0.34);
+
+  const open = forestMap.grid.reduce((n, v) => n + (v !== 0 ? 1 : 0), 0);
+  console.log('forest map: ' + forestMap.nx + 'x' + forestMap.nz + ' cells, '
+    + open + ' walkable, ' + forestMap.interests.length + ' points of interest');
+
+  if (location.hash.includes('map')) scene.add(forestMap.debugMesh());
+}
+
+const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12 });
+window.forest = { map: forestMap, animals }; // console handle for tuning at the event
+if (!location.hash.includes('noanimals')) animals.spawn('rabbit');
+
+// ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
 // Drop generated layer images into public/layers/ and they replace the
 // procedural stand-ins automatically:
@@ -2099,6 +2159,8 @@ function frame() {
       d.z = rand(-14, 8);
     }
   }
+
+  animals.update(dt, t);
 
   renderer.render(scene, camera);
 }
