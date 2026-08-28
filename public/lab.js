@@ -8,6 +8,7 @@ import * as THREE from './vendor/three.module.js';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
 import { ForestMap } from './forest-map.js';
 import { AnimalManager } from './animals.js';
+import { DrawingBody } from './drawing-creature.js';
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2027,9 +2028,62 @@ const forestMap = new ForestMap({
   if (location.hash.includes('map')) scene.add(forestMap.debugMesh());
 }
 
+// The clearing comfortably holds about a dozen creatures at readable spacing.
+// The server remembers far more; the oldest simply wander out of shot.
 const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12 });
-window.forest = { map: forestMap, animals }; // console handle for tuning at the event
-if (!location.hash.includes('noanimals')) animals.spawn('rabbit');
+
+// ---- a child's drawing becomes a creature ----
+function addDrawing(data) {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      animals.spawn(data.kind, {
+        id: data.id,
+        body: (sp) => new DrawingBody(sp, img, data.name),
+      });
+    } catch (err) {
+      console.warn('could not bring drawing to life:', err);
+    }
+  };
+  img.onerror = () => console.warn('drawing failed to decode, id ' + data.id);
+  img.src = data.img;
+}
+
+// ---- the link to the iPads ----
+// Same protocol the original wall speaks, so /draw needs no changes and the
+// old wall keeps working as a fallback during the event.
+{
+  let ws = null, retry = 800;
+  const connect = () => {
+    ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host);
+    ws.onopen = () => {
+      retry = 800;
+      ws.send(JSON.stringify({ type: 'hello', role: 'wall' }));
+      console.log('forest connected to the drawing table');
+    };
+    ws.onmessage = (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'init') for (const c of msg.creatures) addDrawing(c);
+      else if (msg.type === 'creature') addDrawing(msg.creature);
+      else if (msg.type === 'remove') animals.remove(msg.id);
+      else if (msg.type === 'clear') animals.clear();
+    };
+    // never leave the wall dead for the rest of the event because the server
+    // blinked: keep reaching back for it
+    ws.onclose = () => { setTimeout(connect, retry); retry = Math.min(8000, retry * 2); };
+    ws.onerror = () => ws.close();
+  };
+  connect();
+}
+
+// console handle for tuning at the event, and a grey stand-in for testing
+// the navigation without needing a drawing: /lab#proxy
+window.forest = {
+  map: forestMap, animals,
+  spawn: (kind) => animals.spawn(kind || 'hopper'),
+};
+if (location.hash.includes('proxy')) animals.spawn('hopper');
 
 // ============================================================
 // HAND-PAINTED PLATES (optional, highest quality)
