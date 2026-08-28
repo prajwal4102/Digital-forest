@@ -81,6 +81,8 @@ function groundHeight(x, z) {
   ) * amp * 0.5;
 }
 const treeBases = []; // every trunk, so the floor can be tucked around them
+// A/B switch: open /lab#nofocus to see the forest without the layer 9 focus
+const FOCUS = !location.hash.includes('nofocus');
 
 // ============================================================
 // LAYER 1 — DEEP BACKGROUND
@@ -1330,12 +1332,12 @@ addWind(flowerMat, 1.2, 1.6);
       col.lerp(cDeep, near * 0.72);
       const sx2 = x / 7.5, sz2 = (z - 3) / 8.5;
       const stage = clamp(1 - (sx2 * sx2 + sz2 * sz2), 0, 1);
-      col.lerp(cLush, stage * 0.3);  // the walked centre reads lighter
-      col.lerp(cWarm, stage * 0.12); // and very slightly warmer
+      col.lerp(cLush, stage * (FOCUS ? 0.3 : 0.22)); // the walked centre reads lighter
+      if (FOCUS) col.lerp(cWarm, stage * 0.12);      // and very slightly warmer
       // ...while the outer floor settles deeper, so the eye travels inward.
       // Squared falloff: gradual everywhere, no boundary anywhere.
       const ox = x / 9.5, oz = (z - 3) / 11;
-      col.lerp(cDeep, clamp((ox * ox + oz * oz - 1) * 0.24, 0, 0.24));
+      if (FOCUS) col.lerp(cDeep, clamp((ox * ox + oz * oz - 1) * 0.24, 0, 0.24));
       col.lerp(cHaze, clamp((-z - 22) / 55, 0, 0.85)); // melt into the horizon
       cols.push(col.r, col.g, col.b);
     }
@@ -1522,7 +1524,7 @@ addWind(flowerMat, 1.2, 1.6);
 
   // taller grass gathers just outside the clearing and shortens inward —
   // an irregular band, never a ring
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; FOCUS && i < 20; i++) {
     const a = rand(0, TAU);
     const rr = rand(1.1, 1.75) * (0.85 + Math.sin(a * 2.3 + 1.1) * 0.25);
     const gx = Math.cos(a) * 5.4 * rr;
@@ -1934,7 +1936,7 @@ const sunPatches = [];
     { x: 3.4, z: 8.2, s: 2.8, a: 0.06 },
     { x: -1.8, z: 3.6, s: 3.0, a: 0.045 }, // faintest, nearest the stage
   ];
-  for (const sp of spots) {
+  for (const sp of (FOCUS ? spots : [])) {
     const geo = new THREE.PlaneGeometry(sp.s, sp.s * 2.6); // elongated: the
     geo.rotateX(-Math.PI / 2);                             // ground is seen
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({  // near edge-on
@@ -1958,7 +1960,7 @@ const sunPatches = [];
     if (rz > 9 || rz < -5) continue;
     rim.push({ x: rx, z: rz });
   }
-  if (rim.length) {
+  if (FOCUS && rim.length) {
     makeMoteField({
       count: 24,
       tex: softDot('rgba(255,250,226,0.95)', 'rgba(255,242,196,0.4)'),
