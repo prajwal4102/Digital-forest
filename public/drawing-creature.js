@@ -101,7 +101,7 @@ function glowBake(img, M) {
   return c;
 }
 
-function analyzeParts(raw) {
+export function analyzeParts(raw) {
   const k = Math.min(1, 200 / raw.width, 200 / raw.height);
   const gw = Math.max(2, Math.round(raw.width * k));
   const gh = Math.max(2, Math.round(raw.height * k));

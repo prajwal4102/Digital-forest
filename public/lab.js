@@ -9,6 +9,7 @@ import { GLTFLoader } from './vendor/GLTFLoader.js';
 import { ForestMap } from './forest-map.js';
 import { AnimalManager } from './animals.js';
 import { DrawingBody } from './drawing-creature.js';
+import { SculptedBody } from './creature-3d.js';
 
 // ---------- helpers ----------
 const rand = (a, b) => a + Math.random() * (b - a);
@@ -2033,13 +2034,18 @@ const forestMap = new ForestMap({
 const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12 });
 
 // ---- a child's drawing becomes a creature ----
+// By default the drawing is wrapped onto a sculpted 3D body, so it has real
+// volume in the forest. /lab#flat falls back to the plain cut-out for
+// comparison.
+const FLAT = location.hash.includes('flat');
 function addDrawing(data) {
   const img = new Image();
   img.onload = () => {
     try {
       animals.spawn(data.kind, {
         id: data.id,
-        body: (sp) => new DrawingBody(sp, img, data.name),
+        body: (sp) => (FLAT ? new DrawingBody(sp, img, data.name)
+                            : new SculptedBody(sp, img, data.name)),
       });
     } catch (err) {
       console.warn('could not bring drawing to life:', err);

@@ -158,12 +158,13 @@ export class ProxyBody {
       const bounce = Math.abs(Math.sin(this.phase));
       this.object3D.position.y = ctx.groundY + bounce * s.hopHeight;
       // nose down on the way up, level on landing
-      this.object3D.rotation.x = -Math.cos(this.phase * 2) * 0.07;
+      this.pitch = -Math.cos(this.phase * 2) * 0.07;
     } else {
       this.phase += dt * 0.9;
       this.object3D.position.y = ctx.groundY + Math.sin(this.phase) * 0.008;
-      this.object3D.rotation.x *= 0.9;
+      this.pitch = (this.pitch || 0) * 0.9;
     }
+    this.object3D.rotation.x = this.pitch - clamp(ctx.slope || 0, -0.5, 0.5) * 0.5;
 
     // ears react: pinned back at speed, upright and twitching at rest
     const alert = ctx.state === 'look' || ctx.state === 'sniff' ? 1 : 0;
@@ -397,7 +398,10 @@ export class Animal {
       state: this.state, speed: this.speed, moving: this.speed > 0.15,
       groundY: gy, t, slope: slopeF, heading: this.heading,
     });
-    if (!this.body.ownsFacing) o.rotation.x -= clamp(slopeF, -0.5, 0.5) * 0.5;
+    // The terrain lean is the body's to apply, not ours. Mutating a rotation
+    // the body also writes to means whichever of us assigns it last wins, and
+    // any body that only reads it accumulates our nudge every frame until it
+    // is face down in the ground.
 
     this.shadow.position.set(this.pos.x, gy + 0.03, this.pos.y);
     this.shadow.rotation.y = this.heading;
