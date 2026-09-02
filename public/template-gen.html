@@ -14,6 +14,14 @@
 // orthographic camera frame is EXACTLY the projection box the runtime uses
 // (same assembly, same bake), so a coloured-in page carries back onto the
 // living animal with no guessing at all.
+//
+// A page is more than a silhouette: the interior lines come from what the
+// model honestly knows about itself —
+//   bones      each skeleton region (head, neck, each leg, tail, ears) is
+//              rendered as its own flat colour; the boundaries become lines
+//   materials  regions the artist split (belly, muzzle, inner ear) likewise
+//   normals    hard creases in the surface
+// The three part-maps are edge-detected in 2D and inked inside the outline.
 import * as THREE from './vendor/three.module.js';
 import { loadAnimalManifest, getAsset, assembleBody } from './creature-model.js';
 import { bakeProjection } from './creature-3d.js';
@@ -23,14 +31,82 @@ const log = (t) => { document.getElementById('log').textContent = t; };
 
 const H = 1024; // template height in pixels
 
-let renderer = null;
-function getRenderer(W) {
-  if (!renderer) {
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+let renderer = null;   // silhouette & page: antialiased
+let hardRenderer = null; // part maps: no antialias, so boundaries stay crisp
+function getRenderer(W, hard) {
+  if (hard) {
+    if (!hardRenderer) hardRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
+    hardRenderer.setSize(W, H);
+    hardRenderer.setClearColor(0x000000, 0);
+    return hardRenderer;
   }
+  if (!renderer) renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setSize(W, H);
   renderer.setClearColor(0x000000, 0);
   return renderer;
+}
+
+// each vertex takes the colour of its most influential bone, so the render
+// becomes a map of body parts: head, neck, body, each leg, tail, ears
+function boneMapMaterial() {
+  const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec4 vSkinI;
+        varying vec4 vSkinW;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_SKINNING
+          vSkinI = skinIndex;
+          vSkinW = skinWeight;
+        #else
+          vSkinI = vec4(0.0);
+          vSkinW = vec4(1.0, 0.0, 0.0, 0.0);
+        #endif`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec4 vSkinI;
+        varying vec4 vSkinW;
+        vec3 partColor(float i) {
+          return vec3(fract(sin(i * 12.9898) * 43758.5453),
+                      fract(sin(i * 78.2330) * 12345.6789),
+                      fract(sin(i * 3.14159) * 24680.1230));
+        }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          // dominance decided here, per pixel: the boundary between two body
+          // parts is a single sharp line where the strongest weight flips
+          float di = vSkinI.x; float dw = vSkinW.x;
+          if (vSkinW.y > dw) { dw = vSkinW.y; di = vSkinI.y; }
+          if (vSkinW.z > dw) { dw = vSkinW.z; di = vSkinI.z; }
+          if (vSkinW.w > dw) { dw = vSkinW.w; di = vSkinI.w; }
+          diffuseColor.rgb = partColor(floor(di + 0.5));
+        }`);
+  };
+  return m;
+}
+
+function confMapMaterial() {
+  const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec4 vSkinWc;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_SKINNING
+          vSkinWc = skinWeight;
+        #else
+          vSkinWc = vec4(1.0, 0.0, 0.0, 0.0);
+        #endif`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n        varying vec4 vSkinWc;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float dw = max(max(vSkinWc.x, vSkinWc.y), max(vSkinWc.z, vSkinWc.w));
+          diffuseColor.rgb = vec3(dw);
+        }`);
+  };
+  return m;
 }
 
 function shoot(gltf, cfg, height, mode) {
@@ -41,9 +117,29 @@ function shoot(gltf, cfg, height, mode) {
   bakeProjection(A.holder, A.paintable);
 
   if (mode === 'page') {
-    // white body, dark face features - the outline is added in 2D afterwards
+    // white body, dark face features - lines are added in 2D afterwards
     for (const o of A.paintable) o.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
     for (const o of A.facial) o.material = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+  } else if (mode === 'bones') {
+    for (const o of [...A.paintable, ...A.facial]) o.material = boneMapMaterial();
+  } else if (mode === 'conf') {
+    for (const o of [...A.paintable, ...A.facial]) o.material = confMapMaterial();
+  } else if (mode === 'mats') {
+    // one flat colour per original material: the regions the artist drew
+    const seen = new Map();
+    let i = 1;
+    for (const o of [...A.paintable, ...A.facial]) {
+      const key = o.material.name || o.material.uuid;
+      if (!seen.has(key)) {
+        const hue = (i++ * 0.37) % 1;
+        seen.set(key, new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL(hue, 0.9, 0.5) }));
+      }
+      o.material = seen.get(key);
+    }
+  } else if (mode === 'normals') {
+    for (const o of [...A.paintable, ...A.facial]) o.material = new THREE.MeshNormalMaterial();
+  } else if (mode === 'depth') {
+    for (const o of [...A.paintable, ...A.facial]) o.material = new THREE.MeshDepthMaterial();
   } else { // mask: the whole animal, solid white
     for (const o of [...A.paintable, ...A.facial]) {
       o.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -63,17 +159,84 @@ function shoot(gltf, cfg, height, mode) {
 
   const spanZ = box.max.z - box.min.z;
   const spanY = box.max.y - box.min.y;
-  const cam = new THREE.OrthographicCamera(-spanZ / 2, spanZ / 2, spanY / 2, -spanY / 2, 0.01, 50);
+  // for the depth pass, hug the animal so its 8-bit depth uses the full range
+  const near = mode === 'depth' ? box.min.x + 10 - 0.02 : 0.01;
+  const far = mode === 'depth' ? box.max.x + 10 + 0.02 : 50;
+  const cam = new THREE.OrthographicCamera(-spanZ / 2, spanZ / 2, spanY / 2, -spanY / 2, near, far);
   // from -x, so the animal faces the page's right — u then equals the
   // projection shader's tz with uFlip = 1
   cam.position.set(-10, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
   cam.lookAt(0, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
 
   const W = Math.round(H * spanZ / spanY);
-  const r = getRenderer(W);
+  const hard = mode !== 'page';
+  const r = getRenderer(W, hard);
   r.render(scene, cam);
   const url = r.domElement.toDataURL('image/png');
   return { url, W, box };
+}
+
+const loadImg = (url) => new Promise((res) => {
+  const im = new Image();
+  im.onload = () => res(im);
+  im.src = url;
+});
+
+function pixelsOf(img, W) {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(img, 0, 0);
+  return g.getImageData(0, 0, W, H).data;
+}
+
+// A real boundary is a thin curve. Where several bones blend, dominance
+// flickers and the detector spits a dense blob of marks — drop any mark
+// whose neighbourhood is crowded.
+function pruneDense(marks, W, radius, maxCount) {
+  const sat = new Int32Array((W + 1) * (H + 1));
+  for (let y = 1; y <= H; y++) {
+    let row = 0;
+    for (let x = 1; x <= W; x++) {
+      row += marks[(y - 1) * W + (x - 1)];
+      sat[y * (W + 1) + x] = sat[(y - 1) * (W + 1) + x] + row;
+    }
+  }
+  const out = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    const y0 = Math.max(0, y - radius), y1 = Math.min(H, y + radius + 1);
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!marks[i]) continue;
+      const x0 = Math.max(0, x - radius), x1 = Math.min(W, x + radius + 1);
+      const n = sat[y1 * (W + 1) + x1] - sat[y0 * (W + 1) + x1]
+              - sat[y1 * (W + 1) + x0] + sat[y0 * (W + 1) + x0];
+      if (n <= maxCount) out[i] = 1;
+    }
+  }
+  return out;
+}
+
+// where a part-map changes colour, ink a line — but only well inside the
+// silhouette, so the interior lines never fur up the outline
+function detectEdges(sources, maskData, W, threshold, gate, gateMin) {
+  const marks = new Uint8Array(W * H);
+  const inside = (i) => maskData[i * 4 + 3] > 200;
+  const sure = (i) => !gate || gate[i * 4] >= gateMin;
+  for (const d of sources) {
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (!inside(i) || !inside(i + 1) || !inside(i + W) || !inside(i - 1) || !inside(i - W)) continue;
+        if (!sure(i) || !sure(i + 1) || !sure(i + W)) continue;
+        const o = i * 4, r1 = o + 4, dn = o + W * 4;
+        const dRight = Math.abs(d[o] - d[r1]) + Math.abs(d[o + 1] - d[r1 + 1]) + Math.abs(d[o + 2] - d[r1 + 2]);
+        const dDown = Math.abs(d[o] - d[dn]) + Math.abs(d[o + 1] - d[dn + 1]) + Math.abs(d[o + 2] - d[dn + 2]);
+        if (dRight > threshold || dDown > threshold) marks[i] = 1;
+      }
+    }
+  }
+  return marks;
 }
 
 (async () => {
@@ -87,36 +250,67 @@ function shoot(gltf, cfg, height, mode) {
     const height = SPECIES[kind] ? SPECIES[kind].height : 1.5;
     const page = shoot(asset.gltf, asset.cfg, height, 'page');
     const mask = shoot(asset.gltf, asset.cfg, height, 'mask');
+    const bones = shoot(asset.gltf, asset.cfg, height, 'bones');
+    const conf = shoot(asset.gltf, asset.cfg, height, 'conf');
+    const mats = shoot(asset.gltf, asset.cfg, height, 'mats');
+    const normals = shoot(asset.gltf, asset.cfg, height, 'normals');
+    const depth = shoot(asset.gltf, asset.cfg, height, 'depth');
+    const W = page.W;
 
-    // outline in 2D: stamp the silhouette black in a ring of offsets, then
-    // lay the white body over it - a clean, rounded colouring-book line
-    const imgs = {};
-    await Promise.all(['page', 'mask'].map((k2) => new Promise((res) => {
-      const im = new Image();
-      im.onload = () => { imgs[k2] = im; res(); };
-      im.src = k2 === 'page' ? page.url : mask.url;
-    })));
+    const [pageImg, maskImg, bonesImg, matsImg, normalsImg, depthImg, confImg] = await Promise.all(
+      [page, mask, bones, mats, normals, depth, conf].map((p) => loadImg(p.url)));
+
+    const maskData = pixelsOf(maskImg, W);
+    const confData = pixelsOf(confImg, W);
+    // part boundaries: only where both sides are confidently one part
+    const boneMarks = detectEdges([pixelsOf(bonesImg, W)], maskData, W, 56, confData, 213);
+    const matMarks = detectEdges([pixelsOf(matsImg, W)], maskData, W, 56);
+    const partMarks = pruneDense(new Uint8Array(boneMarks.map((v, i) => v | matMarks[i])), W, 5, 20);
+    // surface creases: smooth-shaded, so only strong bends make a line
+    const creaseMarks = detectEdges([pixelsOf(normalsImg, W)], maskData, W, 175);
+    // depth steps: a near leg in front of the body draws its own edge
+    const depthMarks = pruneDense(detectEdges([pixelsOf(depthImg, W)], maskData, W, 26), W, 4, 26);
+
+    // ---- compose the page ----
     const black = document.createElement('canvas');
-    black.width = page.W; black.height = H;
+    black.width = W; black.height = H;
     const bg = black.getContext('2d');
-    bg.drawImage(imgs.mask, 0, 0);
+    bg.drawImage(maskImg, 0, 0);
     bg.globalCompositeOperation = 'source-in';
     bg.fillStyle = '#1a1a1a';
-    bg.fillRect(0, 0, page.W, H);
+    bg.fillRect(0, 0, W, H);
+
     const c = document.createElement('canvas');
-    c.width = page.W; c.height = H;
+    c.width = W; c.height = H;
     const g = c.getContext('2d');
+    // the outline: the silhouette stamped in a ring
     const rr = H * 0.007;
     for (let i = 0; i < 16; i++) {
       const a2 = (i / 16) * Math.PI * 2;
       g.drawImage(black, Math.cos(a2) * rr, Math.sin(a2) * rr);
     }
-    g.drawImage(imgs.page, 0, 0);
+    g.drawImage(pageImg, 0, 0);
+
+    // ink the interior lines
+    const line = document.createElement('canvas');
+    line.width = W; line.height = H;
+    const lg = line.getContext('2d');
+    const li = lg.createImageData(W, H);
+    for (let i = 0; i < W * H; i++) {
+      if (partMarks[i] || creaseMarks[i] || depthMarks[i]) {
+        const o = i * 4;
+        li.data[o] = li.data[o + 1] = li.data[o + 2] = 26;
+        li.data[o + 3] = 255;
+      }
+    }
+    lg.putImageData(li, 0, 0);
+    // a touch of weight so the lines read like the outline's family
+    for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) g.drawImage(line, ox, oy);
 
     out[kind] = {
       template: c.toDataURL('image/png'),
       mask: mask.url,
-      w: page.W, h: H,
+      w: W, h: H,
       box: {
         minZ: +page.box.min.z.toFixed(4), maxZ: +page.box.max.z.toFixed(4),
         minY: +page.box.min.y.toFixed(4), maxY: +page.box.max.y.toFixed(4),
