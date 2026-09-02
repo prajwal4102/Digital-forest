@@ -10,7 +10,7 @@
 import * as THREE from './vendor/three.module.js';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
 import * as SkeletonUtils from './vendor/utils/SkeletonUtils.js';
-import { prepareDrawing, skinMaterial, bakeProjection, makeNameLabel } from './creature-3d.js';
+import { prepareDrawing, skinify, bakeProjection, makeNameLabel } from './creature-3d.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
@@ -141,10 +141,32 @@ export class ModelBody {
         ? clamp((pbox.min.y + hip01 * (pbox.max.y - pbox.min.y) - pbox.min.y) / (pbox.max.y - pbox.min.y), 0.05, 0.85)
         : 0.5;
       const split = (hip01 > 0 && prep.legSplit > 0) ? prep.legSplit : hip;
-      const skin = skinMaterial(prep, pbox, split, hip);
-      skin.skinning = true;
-      for (const o of paintable) o.material = skin;
-      this.mats.push(skin);
+      // each paintable keeps its own (cloned) material, so its baked texture
+      // detail keeps shading the surface underneath the child's colours
+      const skinned = new Map();
+      for (const o of paintable) {
+        if (!skinned.has(o.material)) {
+          skinned.set(o.material, skinify(o.material.clone(), prep, pbox, split, hip, true));
+        }
+        o.material = skinned.get(o.material);
+      }
+      for (const m of skinned.values()) this.mats.push(m);
+      this.flapUniform = { value: 0 };
+      if (cfg.gait === 'flap') {
+        const uf = this.flapUniform;
+        for (const m of skinned.values()) {
+          const prev = m.onBeforeCompile;
+          m.onBeforeCompile = (sh, r) => {
+            if (prev) prev(sh, r);
+            sh.uniforms.uFlapA = uf;
+            sh.vertexShader = sh.vertexShader
+              .replace('#include <common>', `#include <common>
+                uniform float uFlapA;`)
+              .replace('#include <begin_vertex>', `#include <begin_vertex>
+                { float w = abs(aProj.x); transformed.y += w * w * uFlapA; }`);
+          };
+        }
+      }
       // faces keep their own materials, cloned so the fade is per-creature
       model.traverse((o) => {
         if (o.isMesh && o.visible && KEEP_MAT.test(o.material.name || '')) {
@@ -160,8 +182,11 @@ export class ModelBody {
     model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
 
     // ---- animation ----
+    this.animated = (gltf.animations || []).length > 0;
     this.mixer = new THREE.AnimationMixer(model);
     this.clips = indexClips(gltf.animations || []);
+    this.phase = 0;
+    this.holder = holder;
     this.actions = new Map();
     this.current = null;
     this.oneshot = null;
@@ -238,6 +263,40 @@ export class ModelBody {
         if (this.fade >= 1) m.transparent = false;
       }
       if (this.label) this.label.material.opacity = this.fade;
+    }
+
+    // A detailed model without a rig moves the way the animal moves anyway:
+    // rabbits and birds hop whole-body, elephants sway, butterflies flap.
+    if (!this.animated) {
+      const g = this.cfg.gait || 'hop';
+      const gaitK = ctx.speed / Math.max(0.1, s.speed.walk);
+      let bob = 0, pitch = 0, roll = 0;
+      if (g === 'flap') {
+        this.phase += dt * 9;
+        this.flapUniform.value = Math.sin(this.phase) * 0.4 + 0.12;
+        bob = Math.sin(this.phase * 0.35) * 0.06;
+        pitch = -0.12;
+      } else if (ctx.moving) {
+        this.phase += dt * s.strideRate * (0.5 + gaitK * 0.5);
+        if (g === 'shuffle') {
+          bob = Math.abs(Math.sin(this.phase)) * 0.03;
+          roll = Math.sin(this.phase) * 0.05;
+          pitch = -Math.cos(this.phase * 2) * 0.015;
+        } else { // hop
+          bob = Math.abs(Math.sin(this.phase)) * (s.hopHeight || 0.15);
+          pitch = -Math.cos(this.phase * 2) * 0.09;
+        }
+      } else {
+        this.phase += dt * 1.1;
+        bob = Math.sin(this.phase) * 0.008;
+        // breathing, and a little peck or nose-twitch when sniffing
+        if (ctx.state === 'sniff') pitch = Math.max(0, Math.sin(this.phase * 4)) * 0.12;
+      }
+      this.object3D.position.y = ctx.groundY + bob + (s.hover || 0)
+        + (s.flying ? Math.sin(ctx.t * 1.7) * (s.hoverWobble || 0) * 0.4 : 0);
+      this.root.rotation.x = pitch - clamp(ctx.slope || 0, -0.5, 0.5) * 0.45;
+      this.root.rotation.z = roll;
+      return;
     }
 
     const fast = ctx.speed > s.speed.walk * 1.35;

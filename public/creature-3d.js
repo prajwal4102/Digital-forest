@@ -103,6 +103,14 @@ export function prepareDrawing(img) {
 
 export function skinMaterial(prep, box, split, hip) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 });
+  return skinify(mat, prep, box, split, hip, false);
+}
+
+// Inject the child's-drawing projection into any material. With keepDetail
+// the original albedo keeps working as a luminance layer — baked fur and
+// feather shading show through the child's colours instead of being
+// flattened into balloons.
+export function skinify(mat, prep, box, split, hip, keepDetail = false) {
   const u = {
     uDraw: { value: prep.tex },
     uMin: { value: box.min.clone() },
@@ -114,7 +122,9 @@ export function skinMaterial(prep, box, split, hip) {
     uHip: { value: hip },
   };
   mat.userData.uniforms = u;
-  mat.onBeforeCompile = (sh) => {
+  const prevHook = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, renderer) => {
+    if (prevHook) prevHook(sh, renderer);
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
@@ -137,7 +147,7 @@ export function skinMaterial(prep, box, split, hip) {
         varying vec3 vProj;
         varying vec3 vProjN;
         vec3 gDrawCol = vec3(1.0);`)
-      .replace('#include <map_fragment>', `
+      .replace('#include <map_fragment>', `#include <map_fragment>
         {
           float tz = (vProj.z - uMin.z) / max(0.0001, uMax.z - uMin.z);
           float ty = (vProj.y - uMin.y) / max(0.0001, uMax.y - uMin.y);
@@ -157,12 +167,22 @@ export function skinMaterial(prep, box, split, hip) {
           // Children pick bright colours on purpose. Full shading drains them,
           // so keep a little of the drawing glowing through the shadow side —
           // the form still reads, the colour stays theirs.
+          ${keepDetail ? `
+          // undersides settle darker, so the body reads as a volume
+          col *= 0.86 + 0.26 * clamp(vProjN.y * 0.5 + 0.5, 0.0, 1.0);
+          // the original texture keeps working as light-and-shade under the
+          // child's colour: fur stays fur, feathers stay feathers
+          float dLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          gDrawCol = col * (0.5 + dLum * 0.6);
+          diffuseColor.rgb = col * (0.42 + dLum * 0.85);
+          ` : `
           gDrawCol = col;
           diffuseColor.rgb *= col;
+          `}
         }
       `)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += gDrawCol * 0.3;`);
+        totalEmissiveRadiance += gDrawCol * ${keepDetail ? '0.24' : '0.3'};`);
   };
   return mat;
 }
