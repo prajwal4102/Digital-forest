@@ -1,0 +1,33 @@
+{
+  "_comment": "Animated animal roster. All models by Quaternius (quaternius.com), CC0, downloaded via poly.pizza. 'hip' = fraction of the model's height where its legs end, used to line the drawn legs up with the real ones. 'hide' = accessory meshes that are not part of the animal.",
+  "hopper": {
+    "file": "bunny.glb", "title": "Bunny", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/irZjWFARyl",
+    "hide": ["Carrot"], "hip": 0.22, "rotY": 0, "walkRate": 1.1
+  },
+  "prowler": {
+    "file": "fox.glb", "title": "Fox", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/Bc97C66HKi",
+    "hide": [], "hip": 0.5, "rotY": 0, "walkRate": 1.0
+  },
+  "stomper": {
+    "file": "bull.glb", "title": "Bull", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/a8PIIYwF7r",
+    "hide": [], "hip": 0.48, "rotY": 0, "walkRate": 0.8
+  },
+  "slitherer": {
+    "file": "snake.glb", "title": "Snake", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/x9x0viZs8V",
+    "hide": [], "hip": 0, "rotY": 0, "walkRate": 1.0
+  },
+  "bird": {
+    "file": "chicken.glb", "title": "Chicken", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/ineV9pU5VL",
+    "hide": [], "hip": 0.3, "rotY": 0, "walkRate": 1.3
+  },
+  "butterfly": {
+    "file": "armabee.glb", "title": "Armabee", "author": "Quaternius", "license": "CC0",
+    "source": "https://poly.pizza/m/42djT5zJnx",
+    "hide": [], "hip": 0, "rotY": 0, "walkRate": 1.0
+  }
+}

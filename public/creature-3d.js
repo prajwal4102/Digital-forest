@@ -31,7 +31,7 @@ function makeCanvas(w, h) {
 // patches are inevitable at the edges. Bleeding a heavily blurred copy of the
 // drawing out behind itself fills those with the child's own palette instead
 // of a hard cut or a flat grey.
-function prepareDrawing(img) {
+export function prepareDrawing(img) {
   const W = 512;
   const H = Math.max(8, Math.round(W * img.height / img.width));
   const c = makeCanvas(W, H);
@@ -101,7 +101,7 @@ function prepareDrawing(img) {
 // body space, so the drawing stays painted on while the legs swing.
 // ============================================================
 
-function skinMaterial(prep, box, split, hip) {
+export function skinMaterial(prep, box, split, hip) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 });
   const u = {
     uDraw: { value: prep.tex },
@@ -173,7 +173,7 @@ function skinMaterial(prep, box, split, hip) {
 // whatever a tail or a trunk happens to reach. So the box that defines the
 // projection comes from the core lumps only; limbs sample past its edges and
 // pick up the colour there.
-function bakeProjection(root, core) {
+export function bakeProjection(root, core) {
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   // Two different fits, because the drawing and the sculpt agree on one axis
@@ -521,6 +521,14 @@ export class SculptedBody {
 
   addLabel(name, h) {
     if (!name) return;
+    const s = makeNameLabel(name);
+    s.position.set(0, h * 1.25, 0);
+    this.label = s;
+    this.object3D.add(s);
+  }
+
+  addLabelOld(name, h) {
+    if (!name) return;
     const c = makeCanvas(8, 8);
     const g0 = c.getContext('2d');
     g0.font = '600 40px "Segoe UI", sans-serif';
@@ -674,4 +682,31 @@ export class SculptedBody {
     if (this.prep.tex) this.prep.tex.dispose();
     if (this.label) { this.label.material.map.dispose(); this.label.material.dispose(); }
   }
+}
+
+// the child's name on a soft pill, shared by every body type
+export function makeNameLabel(name) {
+  const c = makeCanvas(8, 8);
+  const g0 = c.getContext('2d');
+  g0.font = '600 40px "Segoe UI", sans-serif';
+  const tw = g0.measureText(name).width;
+  c.width = Math.ceil(tw + 56); c.height = 72;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,20,10,0.6)';
+  g.beginPath();
+  g.roundRect(2, 4, c.width - 4, 64, 20);
+  g.fill();
+  g.font = '600 40px "Segoe UI", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#eafff4';
+  g.fillText(name, c.width / 2, 38);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthWrite: false,
+  }));
+  const lh = 0.3;
+  sp.scale.set(lh * (c.width / c.height), lh, 1);
+  return sp;
 }

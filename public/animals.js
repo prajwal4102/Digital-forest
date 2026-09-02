@@ -67,7 +67,7 @@ export const SPECIES = {
 
   // snakes, worms, caterpillars: low, smooth, no separable legs
   slitherer: { ...BASE, label: 'slitherer',
-    height: 0.6, radius: 0.3, maxWidth: 3.0, rigged: false,
+    height: 0.78, radius: 0.3, maxWidth: 3.0, rigged: false,
     speed: { walk: 0.95, run: 1.9 }, turnRate: 2.2,
     gait: 'slide', strideRate: 3.2, bobAmp: 0.015, roll: 0.02, wagFreq: 3.2 },
 
