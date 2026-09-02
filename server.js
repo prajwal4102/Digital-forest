@@ -101,6 +101,9 @@ wss.on('connection', (ws) => {
           kind: ['prowler', 'stomper', 'hopper', 'slitherer', 'bird', 'butterfly', 'plant',
                  'walker', 'flyer'].includes(msg.kind) ? msg.kind : 'prowler',
           name: String(msg.name || '').slice(0, 24),
+          // 'color' = a coloured-in template page; the wall projects it back
+          // onto the exact model it was rendered from
+          mode: msg.mode === 'color' ? 'color' : 'draw',
           img: msg.img,
           born: Date.now(),
         };

@@ -1,0 +1,80 @@
+{
+ "hopper": {
+  "file": "hopper.png",
+  "mask": "hopper.mask.png",
+  "w": 538,
+  "h": 1024,
+  "box": {
+   "minZ": -0.3021,
+   "maxZ": 0.3021,
+   "minY": 0,
+   "maxY": 1.15
+  },
+  "title": "Bunny"
+ },
+ "prowler": {
+  "file": "prowler.png",
+  "mask": "prowler.mask.png",
+  "w": 2251,
+  "h": 1024,
+  "box": {
+   "minZ": -1.6484,
+   "maxZ": 1.6484,
+   "minY": 0,
+   "maxY": 1.5
+  },
+  "title": "Fox"
+ },
+ "stomper": {
+  "file": "stomper.png",
+  "mask": "stomper.mask.png",
+  "w": 1801,
+  "h": 1024,
+  "box": {
+   "minZ": -1.8467,
+   "maxZ": 1.8467,
+   "minY": 0,
+   "maxY": 2.1
+  },
+  "title": "Bull"
+ },
+ "slitherer": {
+  "file": "slitherer.png",
+  "mask": "slitherer.mask.png",
+  "w": 971,
+  "h": 1024,
+  "box": {
+   "minZ": -0.3699,
+   "maxZ": 0.3699,
+   "minY": 0,
+   "maxY": 0.78
+  },
+  "title": "Snake"
+ },
+ "bird": {
+  "file": "bird.png",
+  "mask": "bird.mask.png",
+  "w": 917,
+  "h": 1024,
+  "box": {
+   "minZ": -0.4253,
+   "maxZ": 0.4253,
+   "minY": 0,
+   "maxY": 0.95
+  },
+  "title": "Chicken"
+ },
+ "butterfly": {
+  "file": "butterfly.png",
+  "mask": "butterfly.mask.png",
+  "w": 1118,
+  "h": 1024,
+  "box": {
+   "minZ": -0.464,
+   "maxZ": 0.464,
+   "minY": 0,
+   "maxY": 0.85
+  },
+  "title": "Armabee"
+ }
+}

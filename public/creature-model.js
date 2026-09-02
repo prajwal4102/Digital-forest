@@ -124,11 +124,61 @@ function indexClips(clips) {
 }
 
 // ============================================================
+// ASSEMBLY
+// Shared by the runtime bodies and the template generator: the colouring
+// page is a photograph of exactly this assembly, so the child's colours can
+// be carried back onto it without any guessing.
+// ============================================================
+
+export function assembleBody(gltf, cfg, height) {
+  const model = SkeletonUtils.clone(gltf.scene);
+
+  const measure = () => {
+    model.updateMatrixWorld(true);
+    const b = new THREE.Box3();
+    model.traverse((o) => {
+      if (o.isMesh && o.visible) {
+        o.geometry.computeBoundingBox();
+        b.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+      }
+    });
+    return b;
+  };
+
+  model.rotation.y = cfg.rotY || 0;
+
+  // accessories are not part of the animal — the bunny keeps its carrot
+  const hide = new Set(cfg.hide || []);
+  model.traverse((o) => { if (hide.has(o.name)) o.visible = false; });
+
+  // one size table rules every animal: scale the bind pose to the species
+  // height, feet on the ground, centred
+  const box = measure();
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const k = height / Math.max(0.001, size.y);
+  const holder = new THREE.Group();
+  holder.scale.setScalar(k);
+  const c = new THREE.Vector3();
+  box.getCenter(c);
+  holder.position.set(-c.x * k, -box.min.y * k, -c.z * k);
+  holder.add(model);
+
+  const paintable = [], facial = [];
+  model.traverse((o) => {
+    if (o.isMesh && o.visible) {
+      (KEEP_MAT.test(o.material.name || '') ? facial : paintable).push(o);
+    }
+  });
+  return { model, holder, paintable, facial, scaleK: k };
+}
+
+// ============================================================
 // THE BODY
 // ============================================================
 
 export class ModelBody {
-  constructor(species, asset, image, name) {
+  constructor(species, asset, image, name, templated = false) {
     this.s = species;
     const { gltf, cfg } = asset;
     this.cfg = cfg;
@@ -137,45 +187,10 @@ export class ModelBody {
     this.root = new THREE.Group(); // carries the slope lean
     this.object3D.add(this.root);
 
-    const model = SkeletonUtils.clone(gltf.scene);
-
-    const measure = () => {
-      model.updateMatrixWorld(true);
-      const b = new THREE.Box3();
-      model.traverse((o) => {
-        if (o.isMesh && o.visible) {
-          o.geometry.computeBoundingBox();
-          b.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
-        }
-      });
-      return b;
-    };
-
-    // some models are authored facing sideways; gbox is their raw frame,
-    // which is the frame the vertex shader will see
-    const gbox = measure();
-    model.rotation.y = cfg.rotY || 0;
-
-    // accessories are not part of the animal — the bunny keeps its carrot to
-    // itself
-    const hide = new Set(cfg.hide || []);
-    model.traverse((o) => { if (hide.has(o.name)) o.visible = false; });
-
-    // ---- one size table rules every animal ----
-    // Measure the bind pose and scale so this creature's height matches its
-    // species entry. Ratios between animals, and against the forest, come
-    // from that one table and nowhere else.
-    const box = measure();
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const k = species.height / Math.max(0.001, size.y);
-    this.scaleK = k;
-    const holder = new THREE.Group();
-    holder.scale.setScalar(k);
-    const c = new THREE.Vector3();
-    box.getCenter(c);
-    holder.position.set(-c.x * k, -box.min.y * k, -c.z * k);
-    holder.add(model);
+    const built = assembleBody(gltf, cfg, species.height);
+    const model = built.model;
+    const holder = built.holder;
+    this.scaleK = built.scaleK;
     this.root.add(holder);
 
     // ---- the child's colours become the skin ----
@@ -185,12 +200,16 @@ export class ModelBody {
     if (image) {
       const prep = prepareDrawing(image);
       this.prep = prep;
+      // A coloured-in template needs no guessing: the page IS a photograph of
+      // this very model, head to the right, frame = the projection box. Any
+      // heuristics would only add error.
+      if (templated) {
+        prep.headRight = true;
+        prep.legSplit = -1;
+      }
       // bake body-space coordinates once per template model (bind pose is
       // shared by every clone, so the attributes are too)
-      const paintable = [];
-      model.traverse((o) => {
-        if (o.isMesh && o.visible && !KEEP_MAT.test(o.material.name || '')) paintable.push(o);
-      });
+      const paintable = built.paintable;
       const baked = paintable.length && paintable[0].geometry.userData.projBox;
       let pbox;
       if (baked) {
@@ -200,7 +219,7 @@ export class ModelBody {
         pbox = bakeProjection(holder, paintable);
         if (paintable.length) paintable[0].geometry.userData.projBox = pbox;
       }
-      const hip01 = cfg.hip || 0;
+      const hip01 = templated ? 0 : (cfg.hip || 0);
       const hip = hip01 > 0
         ? clamp((pbox.min.y + hip01 * (pbox.max.y - pbox.min.y) - pbox.min.y) / (pbox.max.y - pbox.min.y), 0.05, 0.85)
         : 0.5;

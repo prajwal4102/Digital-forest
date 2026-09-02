@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digital Jungle — colouring template generator</title>
+<style>body { background: #223; color: #cde; font: 13px monospace; padding: 12px; }</style>
+</head>
+<body>
+  <div id="log">generating…</div>
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
+  <script type="module">
+// COLOURING-PAGE GENERATOR
+// Photographs each roster model side-on into a colouring template. The
+// orthographic camera frame is EXACTLY the projection box the runtime uses
+// (same assembly, same bake), so a coloured-in page carries back onto the
+// living animal with no guessing at all.
+import * as THREE from './vendor/three.module.js';
+import { loadAnimalManifest, getAsset, assembleBody } from './creature-model.js';
+import { bakeProjection } from './creature-3d.js';
+import { SPECIES } from './animals.js';
+
+const log = (t) => { document.getElementById('log').textContent = t; };
+
+const H = 1024; // template height in pixels
+
+let renderer = null;
+function getRenderer(W) {
+  if (!renderer) {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  }
+  renderer.setSize(W, H);
+  renderer.setClearColor(0x000000, 0);
+  return renderer;
+}
+
+function shoot(gltf, cfg, height, mode) {
+  const scene = new THREE.Scene();
+  const A = assembleBody(gltf, cfg, height); // the animal
+  scene.add(A.holder);
+  A.holder.updateMatrixWorld(true);
+  bakeProjection(A.holder, A.paintable);
+
+  if (mode === 'page') {
+    // white body, dark face features - the outline is added in 2D afterwards
+    for (const o of A.paintable) o.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    for (const o of A.facial) o.material = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+  } else { // mask: the whole animal, solid white
+    for (const o of [...A.paintable, ...A.facial]) {
+      o.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    }
+  }
+
+  // The camera lives in world space; the shader's uv lives in holder space.
+  // The holder is a uniform scale + offset, so framing the camera on the
+  // world box of the SAME meshes gives the identical 0..1 mapping.
+  const box = new THREE.Box3();
+  const tmp = new THREE.Box3();
+  for (const o of A.paintable) {
+    o.geometry.computeBoundingBox();
+    tmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    box.union(tmp);
+  }
+
+  const spanZ = box.max.z - box.min.z;
+  const spanY = box.max.y - box.min.y;
+  const cam = new THREE.OrthographicCamera(-spanZ / 2, spanZ / 2, spanY / 2, -spanY / 2, 0.01, 50);
+  // from -x, so the animal faces the page's right — u then equals the
+  // projection shader's tz with uFlip = 1
+  cam.position.set(-10, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
+  cam.lookAt(0, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
+
+  const W = Math.round(H * spanZ / spanY);
+  const r = getRenderer(W);
+  r.render(scene, cam);
+  const url = r.domElement.toDataURL('image/png');
+  return { url, W, box };
+}
+
+(async () => {
+  const manifest = await loadAnimalManifest();
+  const out = {};
+  for (const kind of Object.keys(manifest)) {
+    if (kind.startsWith('_')) continue;
+    log('rendering ' + kind + '…');
+    const asset = await getAsset(kind);
+    if (!asset) continue;
+    const height = SPECIES[kind] ? SPECIES[kind].height : 1.5;
+    const page = shoot(asset.gltf, asset.cfg, height, 'page');
+    const mask = shoot(asset.gltf, asset.cfg, height, 'mask');
+
+    // outline in 2D: stamp the silhouette black in a ring of offsets, then
+    // lay the white body over it - a clean, rounded colouring-book line
+    const imgs = {};
+    await Promise.all(['page', 'mask'].map((k2) => new Promise((res) => {
+      const im = new Image();
+      im.onload = () => { imgs[k2] = im; res(); };
+      im.src = k2 === 'page' ? page.url : mask.url;
+    })));
+    const black = document.createElement('canvas');
+    black.width = page.W; black.height = H;
+    const bg = black.getContext('2d');
+    bg.drawImage(imgs.mask, 0, 0);
+    bg.globalCompositeOperation = 'source-in';
+    bg.fillStyle = '#1a1a1a';
+    bg.fillRect(0, 0, page.W, H);
+    const c = document.createElement('canvas');
+    c.width = page.W; c.height = H;
+    const g = c.getContext('2d');
+    const rr = H * 0.007;
+    for (let i = 0; i < 16; i++) {
+      const a2 = (i / 16) * Math.PI * 2;
+      g.drawImage(black, Math.cos(a2) * rr, Math.sin(a2) * rr);
+    }
+    g.drawImage(imgs.page, 0, 0);
+
+    out[kind] = {
+      template: c.toDataURL('image/png'),
+      mask: mask.url,
+      w: page.W, h: H,
+      box: {
+        minZ: +page.box.min.z.toFixed(4), maxZ: +page.box.max.z.toFixed(4),
+        minY: +page.box.min.y.toFixed(4), maxY: +page.box.max.y.toFixed(4),
+      },
+      title: asset.cfg.title,
+    };
+  }
+  window.RESULT = out;
+  log('done: ' + Object.keys(out).join(', '));
+})().catch((e) => { log('FAIL: ' + e.message); window.RESULT = { error: String(e) }; });
+  </script>
+</body>
+</html>

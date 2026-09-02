@@ -2052,7 +2052,7 @@ function addDrawing(data) {
     try {
       animals.spawn(data.kind, {
         id: data.id,
-        body: (sp) => (asset ? new ModelBody(sp, asset, img, data.name)
+        body: (sp) => (asset ? new ModelBody(sp, asset, img, data.name, data.mode === 'color')
           : FLAT ? new DrawingBody(sp, img, data.name)
                  : new SculptedBody(sp, img, data.name)),
       });

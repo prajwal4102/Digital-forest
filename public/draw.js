@@ -21,6 +21,53 @@ const COLORS = [
 ];
 const SIZES = [5, 12, 24, 44];
 
+// ---------- colouring templates ----------
+// Each template is a photograph of the actual 3D animal the wall will use,
+// so the colours land exactly where the child puts them. If the fetch fails
+// (or a kind has no template, like the flower) the pad stays freehand.
+let templates = null;      // kind -> {img, mask, w, h}
+let tpl = null;            // the active template, or null for freehand
+let tplRect = null;        // where the page sits on the pad, in CSS px
+
+async function loadTemplates() {
+  try {
+    const idx = await (await fetch('templates/index.json')).json();
+    const loaded = {};
+    await Promise.all(Object.entries(idx).map(([k, t]) => new Promise((res) => {
+      const img = new Image();
+      const mask = new Image();
+      let left = 2;
+      const done = () => { if (--left === 0) { loaded[k] = { img, mask, w: t.w, h: t.h }; res(); } };
+      img.onload = done; mask.onload = done;
+      img.onerror = res; mask.onerror = res;
+      img.src = 'templates/' + t.file;
+      mask.src = 'templates/' + t.mask;
+    })));
+    templates = loaded;
+    setKind(kind);
+  } catch (e) {
+    console.warn('no colouring templates, staying freehand:', e);
+  }
+}
+
+function setKind(k) {
+  kind = k;
+  tpl = (templates && templates[k]) || null;
+  layoutTemplate();
+  clearPad();
+}
+
+function layoutTemplate() {
+  if (!tpl) { tplRect = null; composite(); return; }
+  const r = wrap.getBoundingClientRect();
+  const m = 14; // page margin
+  const availW = r.width - m * 2, availH = r.height - m * 2;
+  const k = Math.min(availW / tpl.w, availH / tpl.h);
+  const w = tpl.w * k, h = tpl.h * k;
+  tplRect = { x: (r.width - w) / 2, y: (r.height - h) / 2, w, h };
+  composite();
+}
+
 let color = COLORS[0];
 let brushSize = SIZES[1];
 let erasing = false;
@@ -100,30 +147,71 @@ function refreshTools() {
 // ---------- kind picker ----------
 for (const b of document.querySelectorAll('.kindBtn')) {
   b.onclick = () => {
+    if (hasInk && !confirm('Switch animal? Your colouring starts over.')) return;
     document.querySelectorAll('.kindBtn').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
-    kind = b.dataset.kind;
+    setKind(b.dataset.kind);
   };
 }
 
 // ---------- canvas ----------
+const inkCv = document.createElement('canvas');   // the child's strokes
+const inkCtx = inkCv.getContext('2d', { willReadFrequently: true });
+const maskCv = document.createElement('canvas');  // scratch for clipping
+
 function resizePad() {
-  // Preserve current drawing across resize/rotation
-  const prev = hasInk ? ctx.getImageData(0, 0, pad.width, pad.height) : null;
-  const prevW = pad.width, prevH = pad.height;
+  // Preserve current strokes across resize/rotation
+  const prev = hasInk ? inkCtx.getImageData(0, 0, inkCv.width, inkCv.height) : null;
+  const prevW = inkCv.width, prevH = inkCv.height;
   const r = wrap.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   pad.width = r.width * dpr;
   pad.height = r.height * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+  inkCv.width = pad.width;
+  inkCv.height = pad.height;
+  maskCv.width = pad.width;
+  maskCv.height = pad.height;
+  inkCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  inkCtx.lineCap = 'round';
+  inkCtx.lineJoin = 'round';
   if (prev) {
     const tmp = document.createElement('canvas');
     tmp.width = prevW; tmp.height = prevH;
     tmp.getContext('2d').putImageData(prev, 0, 0);
-    ctx.drawImage(tmp, 0, 0, prevW, prevH, 0, 0, r.width, r.height);
+    inkCtx.save();
+    inkCtx.setTransform(1, 0, 0, 1, 0, 0);
+    inkCtx.drawImage(tmp, 0, 0, prevW, prevH, 0, 0, inkCv.width, inkCv.height);
+    inkCtx.restore();
   }
+  layoutTemplate();
+}
+
+// paint the visible pad: strokes (clipped to the animal) with the template
+// lines on top, where they can never be painted over
+function composite() {
+  const r = wrap.getBoundingClientRect();
+  ctx.clearRect(0, 0, r.width, r.height);
+  if (!tpl || !tplRect) {
+    ctx.drawImage(inkCv, 0, 0, r.width, r.height);
+    return;
+  }
+  const mg = maskCv.getContext('2d');
+  mg.save();
+  mg.setTransform(1, 0, 0, 1, 0, 0);
+  mg.clearRect(0, 0, maskCv.width, maskCv.height);
+  mg.drawImage(inkCv, 0, 0);
+  mg.restore();
+  const dpr = pad.width / r.width;
+  mg.save();
+  mg.globalCompositeOperation = 'destination-in';
+  mg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  mg.drawImage(tpl.mask, tplRect.x, tplRect.y, tplRect.w, tplRect.h);
+  mg.restore();
+  ctx.drawImage(maskCv, 0, 0, r.width, r.height);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.drawImage(tpl.img, tplRect.x, tplRect.y, tplRect.w, tplRect.h);
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 function padPos(e) {
@@ -132,27 +220,29 @@ function padPos(e) {
 }
 
 function snapshot() {
-  undoStack.push(ctx.getImageData(0, 0, pad.width, pad.height));
+  undoStack.push(inkCtx.getImageData(0, 0, inkCv.width, inkCv.height));
   if (undoStack.length > UNDO_MAX) undoStack.shift();
 }
 
 function doUndo() {
   const snap = undoStack.pop();
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, pad.width, pad.height);
-  if (snap) ctx.putImageData(snap, 0, 0);
-  ctx.restore();
+  inkCtx.save();
+  inkCtx.setTransform(1, 0, 0, 1, 0, 0);
+  inkCtx.clearRect(0, 0, inkCv.width, inkCv.height);
+  if (snap) inkCtx.putImageData(snap, 0, 0);
+  inkCtx.restore();
   if (undoStack.length === 0 && !snap) hasInk = false;
+  composite();
 }
 
 function clearPad() {
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, pad.width, pad.height);
-  ctx.restore();
+  inkCtx.save();
+  inkCtx.setTransform(1, 0, 0, 1, 0, 0);
+  inkCtx.clearRect(0, 0, inkCv.width, inkCv.height);
+  inkCtx.restore();
   undoStack = [];
   hasInk = false;
+  composite();
 }
 
 pad.addEventListener('pointerdown', (e) => {
@@ -181,20 +271,45 @@ pad.addEventListener('pointerup', endStroke);
 pad.addEventListener('pointercancel', endStroke);
 
 function drawSeg(a, b) {
-  ctx.globalCompositeOperation = erasing ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = color;
-  ctx.lineWidth = erasing ? brushSize * 2.2 : brushSize;
-  ctx.beginPath();
-  ctx.moveTo(a.x, a.y);
-  ctx.lineTo(b.x + 0.01, b.y + 0.01);
-  ctx.stroke();
-  ctx.globalCompositeOperation = 'source-over';
+  inkCtx.globalCompositeOperation = erasing ? 'destination-out' : 'source-over';
+  inkCtx.strokeStyle = color;
+  inkCtx.lineWidth = erasing ? brushSize * 2.2 : brushSize;
+  inkCtx.beginPath();
+  inkCtx.moveTo(a.x, a.y);
+  inkCtx.lineTo(b.x + 0.01, b.y + 0.01);
+  inkCtx.stroke();
+  inkCtx.globalCompositeOperation = 'source-over';
+  composite();
 }
 
 // ---------- export ----------
+// Colouring mode: the sent image spans EXACTLY the template frame, because
+// the wall projects it back through that same frame. Never crop it.
+function exportColoring() {
+  const outH = 512;
+  const outW = Math.round(outH * tpl.w / tpl.h);
+  const out = document.createElement('canvas');
+  out.width = outW; out.height = outH;
+  const g = out.getContext('2d');
+  // the animal's body: white paper wherever it is not coloured
+  g.drawImage(tpl.mask, 0, 0, outW, outH);
+  // the child's colours, kept inside the lines
+  const dpr = pad.width / wrap.getBoundingClientRect().width;
+  g.globalCompositeOperation = 'source-atop';
+  g.drawImage(inkCv,
+    tplRect.x * dpr, tplRect.y * dpr, tplRect.w * dpr, tplRect.h * dpr,
+    0, 0, outW, outH);
+  // the outline rides on top, part of their creature's look
+  g.globalCompositeOperation = 'multiply';
+  g.drawImage(tpl.img, 0, 0, outW, outH);
+  g.globalCompositeOperation = 'source-over';
+  return out.toDataURL('image/png');
+}
+
 function exportCreature() {
-  const w = pad.width, h = pad.height;
-  const data = ctx.getImageData(0, 0, w, h).data;
+  if (tpl && tplRect) return exportColoring();
+  const w = inkCv.width, h = inkCv.height;
+  const data = inkCtx.getImageData(0, 0, w, h).data;
   // find bounding box of non-transparent pixels
   let minX = w, minY = h, maxX = -1, maxY = -1;
   for (let y = 0; y < h; y++) {
@@ -219,7 +334,7 @@ function exportCreature() {
   const out = document.createElement('canvas');
   out.width = Math.round(bw * scale);
   out.height = Math.round(bh * scale);
-  out.getContext('2d').drawImage(pad, minX, minY, bw, bh, 0, 0, out.width, out.height);
+  out.getContext('2d').drawImage(inkCv, minX, minY, bw, bh, 0, 0, out.width, out.height);
   return out.toDataURL('image/png');
 }
 
@@ -268,6 +383,7 @@ sendBtn.addEventListener('click', () => {
     type: 'creature',
     kind,
     name: nameInput.value.trim(),
+    mode: tpl && tplRect ? 'color' : 'draw',
     img,
   }));
   ovEmoji.textContent = KIND_EMOJI[kind];
@@ -288,3 +404,4 @@ buildTools();
 window.addEventListener('resize', () => setTimeout(resizePad, 100));
 resizePad();
 connect();
+loadTemplates();
