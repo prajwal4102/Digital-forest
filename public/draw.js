@@ -299,10 +299,10 @@ function exportColoring() {
   g.drawImage(inkCv,
     tplRect.x * dpr, tplRect.y * dpr, tplRect.w * dpr, tplRect.h * dpr,
     0, 0, outW, outH);
-  // the outline rides on top, part of their creature's look
-  g.globalCompositeOperation = 'multiply';
-  g.drawImage(tpl.img, 0, 0, outW, outH);
   g.globalCompositeOperation = 'source-over';
+  // The template lines stay OUT of the export on purpose: they are a guide
+  // for colouring, not part of the artwork. The 3D animal supplies its own
+  // form and face, and baked-on black lines read as dirt on its skin.
   return out.toDataURL('image/png');
 }
 
