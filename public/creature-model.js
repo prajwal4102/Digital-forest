@@ -37,19 +37,27 @@ export async function loadAnimalManifest() {
   // warm the cache in the background so the first child never waits
   for (const kind of Object.keys(manifest)) {
     if (kind.startsWith('_')) continue;
-    getAsset(kind).catch(() => {});
+    if (hasModel(kind)) getAsset(kind).catch(() => {});
   }
   return manifest;
 }
 
+const DETAILED = typeof location !== 'undefined' && location.hash.includes('detailed');
+
+function entryFor(kind) {
+  if (!manifest || kind.startsWith('_')) return null;
+  if (DETAILED && manifest._detailed && manifest._detailed[kind]) return manifest._detailed[kind];
+  return manifest[kind] || null;
+}
+
 export function hasModel(kind) {
-  return !!(manifest && manifest[kind] && !kind.startsWith('_'));
+  return !!entryFor(kind);
 }
 
 export function getAsset(kind) {
   if (!hasModel(kind)) return Promise.resolve(null);
   if (!gltfCache.has(kind)) {
-    const cfg = manifest[kind];
+    const cfg = entryFor(kind);
     gltfCache.set(kind, loader.loadAsync('models/animals/' + cfg.file)
       .then((gltf) => ({ gltf, cfg }))
       .catch((e) => { console.warn('model failed, will sculpt instead:', kind, e); return null; }));
@@ -85,6 +93,22 @@ export class ModelBody {
     this.object3D.add(this.root);
 
     const model = SkeletonUtils.clone(gltf.scene);
+
+    const measure = () => {
+      model.updateMatrixWorld(true);
+      const b = new THREE.Box3();
+      model.traverse((o) => {
+        if (o.isMesh && o.visible) {
+          o.geometry.computeBoundingBox();
+          b.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld));
+        }
+      });
+      return b;
+    };
+
+    // some models are authored facing sideways; gbox is their raw frame,
+    // which is the frame the vertex shader will see
+    const gbox = measure();
     model.rotation.y = cfg.rotY || 0;
 
     // accessories are not part of the animal — the bunny keeps its carrot to
@@ -96,15 +120,7 @@ export class ModelBody {
     // Measure the bind pose and scale so this creature's height matches its
     // species entry. Ratios between animals, and against the forest, come
     // from that one table and nowhere else.
-    model.updateMatrixWorld(true);
-    const box = new THREE.Box3();
-    model.traverse((o) => {
-      if (o.isMesh && o.visible) {
-        o.geometry.computeBoundingBox();
-        const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
-        box.union(b);
-      }
-    });
+    const box = measure();
     const size = new THREE.Vector3();
     box.getSize(size);
     const k = species.height / Math.max(0.001, size.y);
@@ -119,6 +135,8 @@ export class ModelBody {
 
     // ---- the child's colours become the skin ----
     this.mats = [];
+    this.flapUniform = { value: 0 };
+    this.gaitUniform = { value: 0 };
     if (image) {
       const prep = prepareDrawing(image);
       this.prep = prep;
@@ -133,7 +151,8 @@ export class ModelBody {
       if (baked) {
         pbox = paintable[0].geometry.userData.projBox;
       } else {
-        pbox = bakeProjection(model, paintable);
+        holder.updateMatrixWorld(true);
+        pbox = bakeProjection(holder, paintable);
         if (paintable.length) paintable[0].geometry.userData.projBox = pbox;
       }
       const hip01 = cfg.hip || 0;
@@ -142,28 +161,67 @@ export class ModelBody {
         : 0.5;
       const split = (hip01 > 0 && prep.legSplit > 0) ? prep.legSplit : hip;
       // each paintable keeps its own (cloned) material, so its baked texture
-      // detail keeps shading the surface underneath the child's colours
+      // detail keeps shading the surface underneath the child's colours.
+      // Procedural gaits need one material per MESH: each mesh carries its own
+      // body-to-geometry transform, because these files hide up-axis
+      // conversions in their node matrices - guessing axes melted an elephant.
+      const perMesh = cfg.gait === 'walk4' || cfg.gait === 'flap';
       const skinned = new Map();
       for (const o of paintable) {
-        if (!skinned.has(o.material)) {
-          skinned.set(o.material, skinify(o.material.clone(), prep, pbox, split, hip, true));
+        const key = perMesh ? o : o.material;
+        if (!skinned.has(key)) {
+          skinned.set(key, skinify(o.material.clone(), prep, pbox, split, hip, true));
         }
-        o.material = skinned.get(o.material);
+        o.material = skinned.get(key);
       }
       for (const m of skinned.values()) this.mats.push(m);
-      this.flapUniform = { value: 0 };
-      if (cfg.gait === 'flap') {
+
+      if (perMesh) {
+        // Displacements are computed in the canonical body frame (feet at 0,
+        // +z forward, metres) using the baked aProj, then carried into each
+        // mesh's own vertex space by its inverse bake transform.
+        const ug = this.gaitUniform;
         const uf = this.flapUniform;
-        for (const m of skinned.values()) {
-          const prev = m.onBeforeCompile;
-          m.onBeforeCompile = (sh, r) => {
+        const hipY = pbox.min.y + (cfg.legHip || 0.5) * (pbox.max.y - pbox.min.y);
+        const legSpan = Math.max(0.001, hipY - pbox.min.y);
+        const midZ = (pbox.min.z + pbox.max.z) / 2;
+        const amp = (cfg.legAmp || 0.3) * legSpan;
+        holder.updateMatrixWorld(true);
+        for (const o of paintable) {
+          const b2g = new THREE.Matrix3().setFromMatrix4(
+            new THREE.Matrix4().copy(o.matrixWorld).invert().multiply(holder.matrixWorld));
+          const mat = o.material;
+          const prev = mat.onBeforeCompile;
+          const isWalk = cfg.gait === 'walk4';
+          mat.onBeforeCompile = (sh, r) => {
             if (prev) prev(sh, r);
+            sh.uniforms.uGaitP = ug;
             sh.uniforms.uFlapA = uf;
+            sh.uniforms.uB2G = { value: b2g };
             sh.vertexShader = sh.vertexShader
               .replace('#include <common>', `#include <common>
-                uniform float uFlapA;`)
-              .replace('#include <begin_vertex>', `#include <begin_vertex>
-                { float w = abs(aProj.x); transformed.y += w * w * uFlapA; }`);
+                uniform float uGaitP;
+                uniform float uFlapA;
+                uniform mat3 uB2G;`)
+              .replace('#include <begin_vertex>', isWalk ? `#include <begin_vertex>
+                {
+                  // no skeleton, but it still walks: below the hip the body
+                  // shears fore-and-aft in diagonal pairs, like a stride
+                  float below = ${hipY.toFixed(4)} - aProj.y;
+                  if (below > 0.0) {
+                    float quad = (aProj.z > ${midZ.toFixed(4)} ? 1.0 : -1.0) * (aProj.x > 0.0 ? 1.0 : -1.0);
+                    float ph = uGaitP + (quad > 0.0 ? 0.0 : 3.14159);
+                    float kk = min(below / ${legSpan.toFixed(4)}, 1.0);
+                    transformed += uB2G * vec3(
+                      0.0,
+                      max(0.0, cos(ph)) * ${(amp * 0.3).toFixed(4)} * kk,
+                      sin(ph) * ${amp.toFixed(4)} * kk);
+                  }
+                }` : `#include <begin_vertex>
+                {
+                  float w = abs(aProj.x);
+                  transformed += uB2G * vec3(0.0, w * w * uFlapA, 0.0);
+                }`);
           };
         }
       }
@@ -277,14 +335,19 @@ export class ModelBody {
         bob = Math.sin(this.phase * 0.35) * 0.06;
         pitch = -0.12;
       } else if (ctx.moving) {
-        this.phase += dt * s.strideRate * (0.5 + gaitK * 0.5);
-        if (g === 'shuffle') {
+        this.phase += dt * s.strideRate * (0.5 + gaitK * 0.5) * (this.cfg.walkRate || 1);
+        if (g === 'walk4') {
+          this.gaitUniform.value = this.phase;
+          bob = Math.abs(Math.sin(this.phase)) * 0.025;
+          roll = Math.sin(this.phase) * 0.035;
+        } else if (g === 'shuffle') {
           bob = Math.abs(Math.sin(this.phase)) * 0.03;
           roll = Math.sin(this.phase) * 0.05;
           pitch = -Math.cos(this.phase * 2) * 0.015;
-        } else { // hop
-          bob = Math.abs(Math.sin(this.phase)) * (s.hopHeight || 0.15);
-          pitch = -Math.cos(this.phase * 2) * 0.09;
+        } else { // hop: a real leap, not a glide - up, tuck, land
+          const hk = this.cfg.hopK || 1;
+          bob = Math.abs(Math.sin(this.phase)) * (s.hopHeight || 0.15) * hk;
+          pitch = -Math.cos(this.phase * 2) * 0.14 * hk;
         }
       } else {
         this.phase += dt * 1.1;

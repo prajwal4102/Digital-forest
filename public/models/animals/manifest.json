@@ -67,5 +67,45 @@
   "hip": 0,
   "rotY": 0,
   "walkRate": 1.0
+ },
+ "_detailed": {
+  "hopper": {
+   "file": "cottontail.glb",
+   "title": "Cottontail rabbit",
+   "author": "Poly by Google",
+   "license": "CC-BY 3.0",
+   "source": "https://poly.pizza/m/3vvONbRCuEF",
+   "hide": [],
+   "hip": 0,
+   "rotY": 0,
+   "gait": "hop",
+   "hopK": 1.6,
+   "walkRate": 1.0
+  },
+  "bird": {
+   "file": "bluebird.glb",
+   "title": "Western bluebird",
+   "author": "Poly by Google",
+   "license": "CC-BY 3.0",
+   "source": "https://poly.pizza/m/cdcl5UwlYWd",
+   "hide": [],
+   "hip": 0,
+   "rotY": 0,
+   "gait": "hop",
+   "hopK": 1.2,
+   "walkRate": 1.2
+  },
+  "butterfly": {
+   "file": "monarch.glb",
+   "title": "Monarch Butterfly",
+   "author": "Paul",
+   "license": "CC-BY 3.0",
+   "source": "https://poly.pizza/m/eeO11BVjvsO",
+   "hide": [],
+   "hip": 0,
+   "rotY": 0,
+   "gait": "flap",
+   "walkRate": 1.0
+  }
  }
 }
