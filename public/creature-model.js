@@ -10,6 +10,7 @@
 import * as THREE from './vendor/three.module.js';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
 import * as SkeletonUtils from './vendor/utils/SkeletonUtils.js';
+import { mergeVertices } from './vendor/utils/BufferGeometryUtils.js';
 import { prepareDrawing, skinify, bakeProjection, makeNameLabel } from './creature-3d.js';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -59,10 +60,54 @@ export function getAsset(kind) {
   if (!gltfCache.has(kind)) {
     const cfg = entryFor(kind);
     gltfCache.set(kind, loader.loadAsync('models/animals/' + cfg.file)
-      .then((gltf) => ({ gltf, cfg }))
+      .then((gltf) => { smoothScene(gltf.scene, cfg); return { gltf, cfg }; })
       .catch((e) => { console.warn('model failed, will sculpt instead:', kind, e); return null; }));
   }
   return gltfCache.get(kind);
+}
+
+// Low-poly packs split every vertex per face, so each triangle shades as its
+// own flat plate — the boxy look. Welding the vertices back together and
+// recomputing the normals keeps the silhouette but lets light flow smoothly
+// across the body. Done once per loaded file; every clone shares the result.
+function smoothScene(scene, cfg) {
+  if (cfg.smooth === false) return;
+  const done = new Map();
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    let g = done.get(o.geometry);
+    if (!g) {
+      const before = o.geometry.attributes.position.count;
+      const tmp = o.geometry.clone();
+      tmp.deleteAttribute('normal');
+      g = mergeVertices(tmp, 1e-4);
+      g.computeVertexNormals();
+      // a merge that barely merged means per-face UVs blocked it: fall back
+      // to welding by position only, trading the palette texture's per-face
+      // detail (which the child's colours replace anyway) for smooth light
+      if (g.attributes.position.count > before * 0.72) {
+        const bare = o.geometry.clone();
+        bare.deleteAttribute('normal');
+        bare.deleteAttribute('uv');
+        const merged = mergeVertices(bare, 1e-4);
+        if (merged.attributes.position.count < g.attributes.position.count * 0.85) {
+          merged.computeVertexNormals();
+          g = merged;
+          g.userData.uvDropped = true;
+        }
+      }
+      console.log('smooth ' + (cfg.title || '') + '/' + (o.name || 'mesh') + ': '
+        + before + ' -> ' + g.attributes.position.count + ' verts'
+        + (g.userData.uvDropped ? ' (uv dropped)' : ''));
+      done.set(o.geometry, g);
+    }
+    o.geometry = g;
+    if (g.userData.uvDropped && o.material && o.material.map) {
+      o.material = o.material.clone();
+      o.material.map = null;
+    }
+    if (o.material) o.material.flatShading = false;
+  });
 }
 
 // clip names arrive as "CharacterArmature|Walk" or "Snake_Walk"; index them
