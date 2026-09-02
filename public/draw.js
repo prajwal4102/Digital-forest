@@ -358,8 +358,8 @@ function connect() {
 
 // ---------- send ----------
 const KIND_EMOJI = {
-  prowler: '🐯', stomper: '🐘', hopper: '🐰', slitherer: '🐍',
-  bird: '🐦', butterfly: '🦋', plant: '🌿',
+  prowler: '🦊', stomper: '🐂', hopper: '🐰', slitherer: '🐍',
+  bird: '🐔', butterfly: '🐝', plant: '🌸',
 };
 
 sendBtn.addEventListener('click', () => {
