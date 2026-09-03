@@ -194,8 +194,13 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTe
           // the original texture keeps working as light-and-shade under the
           // child's colour: fur stays fur, feathers stay feathers
           float dLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          gDrawCol = col * (0.5 + dLum * 0.6);
-          diffuseColor.rgb = col * (0.42 + dLum * 0.85);
+          // What the artist made near-black STAYS black - eyes, nose,
+          // nostrils, dark ear interiors - whatever the child colours.
+          // Kids may not pick black, but the animal still needs its eyes.
+          float darkKeep = 1.0 - smoothstep(0.03, 0.095, dLum);
+          gDrawCol = col * (0.5 + dLum * 0.6) * (1.0 - darkKeep);
+          diffuseColor.rgb = mix(col * (0.42 + dLum * 0.85),
+                                 diffuseColor.rgb * 0.85, darkKeep);
           ` : `
           gDrawCol = col;
           diffuseColor.rgb *= col;
