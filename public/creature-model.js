@@ -134,11 +134,13 @@ function smoothScene(scene, cfg) {
 // under every suffix so one resolver serves every pack
 function indexClips(clips) {
   const map = new Map();
+  const put = (k, c) => { const lk = k.toLowerCase(); if (!map.has(lk)) map.set(lk, c); };
   for (const c of clips) {
     const bare = c.name.replace(/^.*\|/, '');
-    if (!map.has(bare)) map.set(bare, c);
-    const stripped = bare.replace(/^[A-Za-z]+_(?=Idle|Walk|Attack|Jump)/, '');
-    if (!map.has(stripped)) map.set(stripped, c);
+    put(bare, c);
+    // 'Bunny_walk' and friends: index the suffix after any single prefix word
+    const stripped = bare.replace(/^[A-Za-z]+_(?=idle|walk|attack|jump|run)/i, '');
+    put(stripped, c);
   }
   return map;
 }
@@ -358,7 +360,7 @@ export class ModelBody {
   }
 
   resolve(names) {
-    for (const n of names) if (this.clips.has(n)) return n;
+    for (const n of names) if (this.clips.has(n.toLowerCase())) return n.toLowerCase();
     return null;
   }
 

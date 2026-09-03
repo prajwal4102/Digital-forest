@@ -360,6 +360,7 @@ function connect() {
 const KIND_EMOJI = {
   prowler: '🦊', stomper: '🐂', hopper: '🐰', slitherer: '🐍',
   bird: '🐔', butterfly: '🐝', plant: '🌸',
+  dog: '🐶', deer: '🦌', stag: '🫎', horse: '🐴',
 };
 
 sendBtn.addEventListener('click', () => {

@@ -99,6 +99,7 @@ wss.on('connection', (ws) => {
         const creature = {
           id: nextId++,
           kind: ['prowler', 'stomper', 'hopper', 'slitherer', 'bird', 'butterfly', 'plant',
+                 'deer', 'stag', 'horse', 'dog',
                  'walker', 'flyer'].includes(msg.kind) ? msg.kind : 'prowler',
           name: String(msg.name || '').slice(0, 24),
           // 'color' = a coloured-in template page; the wall projects it back

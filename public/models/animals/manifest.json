@@ -1,15 +1,13 @@
 {
  "_comment": "Animal roster: rigged+animated models by Quaternius (quaternius.com), CC0, downloaded via poly.pizza, vendored for the offline event. Natural movement beats static detail - the child's colouring covers the surface anyway. 'hip' = fraction of height where the legs end (drawn legs are mapped onto them); 'hide' = accessory meshes.",
  "hopper": {
-  "file": "bunny.glb",
-  "title": "Bunny",
-  "author": "Quaternius",
-  "license": "CC0",
-  "source": "https://poly.pizza/m/irZjWFARyl",
-  "hide": [
-   "Carrot"
-  ],
-  "hip": 0.22,
+  "file": "rabbit.glb",
+  "title": "Rabbit",
+  "author": "Sherkiz",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/5BJ2H5mE48Y",
+  "hide": [],
+  "hip": 0.3,
   "rotY": 0,
   "walkRate": 1.1
  },
@@ -107,5 +105,49 @@
    "gait": "flap",
    "walkRate": 1.0
   }
+ },
+ "deer": {
+  "file": "deer.glb",
+  "title": "Deer",
+  "author": "Quaternius",
+  "license": "CC0",
+  "source": "https://poly.pizza (Quaternius)",
+  "hide": [],
+  "hip": 0.5,
+  "rotY": 0,
+  "walkRate": 1.0
+ },
+ "stag": {
+  "file": "stag.glb",
+  "title": "Stag",
+  "author": "Quaternius",
+  "license": "CC0",
+  "source": "https://poly.pizza (Quaternius)",
+  "hide": [],
+  "hip": 0.5,
+  "rotY": 0,
+  "walkRate": 0.95
+ },
+ "horse": {
+  "file": "horse.glb",
+  "title": "Horse",
+  "author": "Quaternius",
+  "license": "CC0",
+  "source": "https://poly.pizza (Quaternius)",
+  "hide": [],
+  "hip": 0.5,
+  "rotY": 0,
+  "walkRate": 1.0
+ },
+ "dog": {
+  "file": "husky.glb",
+  "title": "Husky",
+  "author": "Quaternius",
+  "license": "CC0",
+  "source": "https://poly.pizza (Quaternius)",
+  "hide": [],
+  "hip": 0.5,
+  "rotY": 0,
+  "walkRate": 1.1
  }
 }

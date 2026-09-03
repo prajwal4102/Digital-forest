@@ -86,6 +86,26 @@ export const SPECIES = {
     gait: 'fly', strideRate: 8, bobAmp: 0.09,
     states: busier(0.7), interestChance: 0.85 },
 
+  // graceful browsers
+  deer: { ...BASE, label: 'deer',
+    height: 1.7, radius: 0.42, maxWidth: 2.6,
+    speed: { walk: 1.5, run: 3.4 }, turnRate: 3.2, strideRate: 5.2 },
+
+  stag: { ...BASE, label: 'stag',
+    height: 2.0, radius: 0.5, maxWidth: 3.0,
+    speed: { walk: 1.35, run: 3.2 }, turnRate: 2.6, strideRate: 4.6,
+    states: busier(1.2) },
+
+  horse: { ...BASE, label: 'horse',
+    height: 1.95, radius: 0.52, maxWidth: 3.0,
+    speed: { walk: 1.5, run: 3.6 }, turnRate: 2.4, strideRate: 4.8 },
+
+  // dogs are busy: quick trips, lots of sniffing
+  dog: { ...BASE, label: 'dog',
+    height: 1.25, radius: 0.36, maxWidth: 2.4,
+    speed: { walk: 1.5, run: 3.4 }, turnRate: 4.0, strideRate: 6,
+    states: busier(0.75), interestChance: 0.8 },
+
   // flowers and saplings: they stay put and simply grow there
   plant: { ...BASE, label: 'plant',
     height: 1.6, radius: 0.4, maxWidth: 2.2, rigged: false,

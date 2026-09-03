@@ -2,19 +2,21 @@
  "hopper": {
   "file": "hopper.png",
   "mask": "hopper.mask.png",
-  "w": 538,
+  "detail": "hopper.detail.png",
+  "w": 1121,
   "h": 1024,
   "box": {
-   "minZ": -0.3021,
-   "maxZ": 0.3021,
+   "minZ": -0.6294,
+   "maxZ": 0.6294,
    "minY": 0,
    "maxY": 1.15
   },
-  "title": "Bunny"
+  "title": "Rabbit"
  },
  "prowler": {
   "file": "prowler.png",
   "mask": "prowler.mask.png",
+  "detail": "prowler.detail.png",
   "w": 2251,
   "h": 1024,
   "box": {
@@ -28,6 +30,7 @@
  "stomper": {
   "file": "stomper.png",
   "mask": "stomper.mask.png",
+  "detail": "stomper.detail.png",
   "w": 1801,
   "h": 1024,
   "box": {
@@ -41,6 +44,7 @@
  "slitherer": {
   "file": "slitherer.png",
   "mask": "slitherer.mask.png",
+  "detail": "slitherer.detail.png",
   "w": 971,
   "h": 1024,
   "box": {
@@ -54,6 +58,7 @@
  "bird": {
   "file": "bird.png",
   "mask": "bird.mask.png",
+  "detail": "bird.detail.png",
   "w": 917,
   "h": 1024,
   "box": {
@@ -67,6 +72,7 @@
  "butterfly": {
   "file": "butterfly.png",
   "mask": "butterfly.mask.png",
+  "detail": "butterfly.detail.png",
   "w": 1118,
   "h": 1024,
   "box": {
@@ -76,5 +82,61 @@
    "maxY": 0.85
   },
   "title": "Armabee"
+ },
+ "deer": {
+  "file": "deer.png",
+  "mask": "deer.mask.png",
+  "detail": "deer.detail.png",
+  "w": 1054,
+  "h": 1024,
+  "box": {
+   "minZ": -0.8745,
+   "maxZ": 0.8745,
+   "minY": 0,
+   "maxY": 1.7
+  },
+  "title": "Deer"
+ },
+ "stag": {
+  "file": "stag.png",
+  "mask": "stag.mask.png",
+  "detail": "stag.detail.png",
+  "w": 908,
+  "h": 1024,
+  "box": {
+   "minZ": -0.8871,
+   "maxZ": 0.8871,
+   "minY": 0,
+   "maxY": 2
+  },
+  "title": "Stag"
+ },
+ "horse": {
+  "file": "horse.png",
+  "mask": "horse.mask.png",
+  "detail": "horse.detail.png",
+  "w": 1205,
+  "h": 1024,
+  "box": {
+   "minZ": -1.1472,
+   "maxZ": 1.1472,
+   "minY": 0,
+   "maxY": 1.95
+  },
+  "title": "Horse"
+ },
+ "dog": {
+  "file": "dog.png",
+  "mask": "dog.mask.png",
+  "detail": "dog.detail.png",
+  "w": 1248,
+  "h": 1024,
+  "box": {
+   "minZ": -0.7617,
+   "maxZ": 0.7617,
+   "minY": 0,
+   "maxY": 1.25
+  },
+  "title": "Husky"
  }
 }
