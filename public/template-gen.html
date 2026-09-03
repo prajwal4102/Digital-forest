@@ -307,8 +307,19 @@ function detectEdges(sources, maskData, W, threshold, gate, gateMin) {
     // a touch of weight so the lines read like the outline's family
     for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) g.drawImage(line, ox, oy);
 
+    // The same interior lines, alone and softened, become the animal's
+    // surface detailing on the wall: ear folds, toes, tail bands, jaw —
+    // worn like gentle shading, never like ink.
+    const det = document.createElement('canvas');
+    det.width = W; det.height = H;
+    const dg = det.getContext('2d');
+    dg.filter = 'blur(1.2px)';
+    for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) dg.drawImage(line, ox, oy);
+    dg.filter = 'none';
+
     out[kind] = {
       template: c.toDataURL('image/png'),
+      detail: det.toDataURL('image/png'),
       mask: mask.url,
       w: W, h: H,
       box: {

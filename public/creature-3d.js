@@ -110,7 +110,7 @@ export function skinMaterial(prep, box, split, hip) {
 // the original albedo keeps working as a luminance layer — baked fur and
 // feather shading show through the child's colours instead of being
 // flattened into balloons.
-export function skinify(mat, prep, box, split, hip, keepDetail = false) {
+export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTex = null) {
   const u = {
     uDraw: { value: prep.tex },
     uMin: { value: box.min.clone() },
@@ -120,6 +120,9 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false) {
     // the two heights at which the drawing and the sculpt agree
     uSplit: { value: split },
     uHip: { value: hip },
+    // the animal's own anatomy lines, worn as soft shading (models only)
+    uDetail: { value: detailTex || blankDetailTexture() },
+    uDetailOn: { value: 0 },
   };
   mat.userData.uniforms = u;
   const prevHook = mat.onBeforeCompile;
@@ -138,6 +141,8 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform sampler2D uDraw;
+        uniform sampler2D uDetail;
+        uniform float uDetailOn;
         uniform vec3 uMin;
         uniform vec3 uMax;
         uniform vec3 uAvg;
@@ -146,7 +151,14 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false) {
         uniform float uHip;
         varying vec3 vProj;
         varying vec3 vProjN;
-        vec3 gDrawCol = vec3(1.0);`)
+        vec3 gDrawCol = vec3(1.0);
+        float djHash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+        float djNoise(vec2 q) {
+          vec2 i = floor(q); vec2 f = fract(q);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(djHash(i), djHash(i + vec2(1, 0)), f.x),
+                     mix(djHash(i + vec2(0, 1)), djHash(i + vec2(1, 1)), f.x), f.y);
+        }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         {
           float tz = (vProj.z - uMin.z) / max(0.0001, uMax.z - uMin.z);
@@ -170,6 +182,15 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false) {
           ${keepDetail ? `
           // undersides settle darker, so the body reads as a volume
           col *= 0.86 + 0.26 * clamp(vProjN.y * 0.5 + 0.5, 0.0, 1.0);
+          // the animal's own anatomy lines, worn as soft shading: ear folds,
+          // toes, tail bands, the line of the jaw
+          float dLine = texture2D(uDetail, duv).a * uDetailOn;
+          col *= 1.0 - dLine * 0.42;
+          // fur grain, two scales, so the surface stops reading as clay
+          vec2 gAspect = vec2((uMax.z - uMin.z) / max(0.001, uMax.y - uMin.y), 1.0);
+          float g1 = djNoise(duv * gAspect * 90.0);
+          float g2 = djNoise(duv * gAspect * 260.0 + 17.0);
+          col *= 0.90 + 0.10 * g1 + 0.06 * g2;
           // the original texture keeps working as light-and-shade under the
           // child's colour: fur stays fur, feathers stay feathers
           float dLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
@@ -182,9 +203,18 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false) {
         }
       `)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += gDrawCol * ${keepDetail ? '0.24' : '0.3'};`);
+        totalEmissiveRadiance += gDrawCol * ${keepDetail ? '0.17' : '0.3'};`);
   };
   return mat;
+}
+
+let _blankDetail = null;
+function blankDetailTexture() {
+  if (!_blankDetail) {
+    _blankDetail = new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1);
+    _blankDetail.needsUpdate = true;
+  }
+  return _blankDetail;
 }
 
 // Freeze where every vertex sits in body space. Baked once at rest, so a leg

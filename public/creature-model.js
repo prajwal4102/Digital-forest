@@ -15,6 +15,26 @@ import { prepareDrawing, skinify, bakeProjection, makeNameLabel } from './creatu
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
+// each animal's anatomy-line map, worn as soft surface detailing.
+// Loaded once per kind; every creature of that kind shares the texture.
+const detailCache = new Map(); // label -> { tex, ready: uniform-style flag list }
+function detailFor(label) {
+  if (!detailCache.has(label)) {
+    const entry = { tex: null, on: [] };
+    const loader2 = new THREE.TextureLoader();
+    entry.tex = loader2.load('templates/' + label + '.detail.png',
+      (t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        for (const u of entry.on) u.value = 1;
+        entry.loaded = true;
+      },
+      undefined,
+      () => { /* no detail map for this kind: the skin just goes without */ });
+    detailCache.set(label, entry);
+  }
+  return detailCache.get(label);
+}
+
 // materials that stay the model's own: without them every animal is faceless
 const KEEP_MAT = /eye|pupil|teeth|tooth|tongue|nose|mouth/i;
 
@@ -229,12 +249,17 @@ export class ModelBody {
       // Procedural gaits need one material per MESH: each mesh carries its own
       // body-to-geometry transform, because these files hide up-axis
       // conversions in their node matrices - guessing axes melted an elephant.
+      const det = detailFor(species.label);
       const perMesh = cfg.gait === 'walk4' || cfg.gait === 'flap';
       const skinned = new Map();
       for (const o of paintable) {
         const key = perMesh ? o : o.material;
         if (!skinned.has(key)) {
-          skinned.set(key, skinify(o.material.clone(), prep, pbox, split, hip, true));
+          const sm = skinify(o.material.clone(), prep, pbox, split, hip, true, det.tex);
+          const flag = sm.userData.uniforms.uDetailOn;
+          if (det.loaded) flag.value = 1;
+          else det.on.push(flag);
+          skinned.set(key, sm);
         }
         o.material = skinned.get(key);
       }
