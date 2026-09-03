@@ -2035,9 +2035,11 @@ const forestMap = new ForestMap({
 const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12 });
 
 // ---- a child's drawing becomes a creature ----
-// Preferred body: a professionally rigged animal model wearing the child's
-// colours. Fallbacks, in order: the sculpted lump body (/lab#sculpt forces
-// it), the flat cut-out (/lab#flat). Plants have no model and stay sculpted.
+// A coloured template page goes onto the rigged model it was rendered from —
+// aligned by construction. A freehand PICTURE never goes onto a model:
+// smearing a whole drawn animal across a differently-shaped 3D body lands
+// eyes on necks and legs on bellies. Freehand becomes a sculpted body built
+// FROM the drawing instead (/lab#flat forces the flat cut-out).
 const FLAT = location.hash.includes('flat');
 const SCULPT = location.hash.includes('sculpt');
 loadAnimalManifest();
@@ -2045,14 +2047,14 @@ function addDrawing(data) {
   const img = new Image();
   img.onload = async () => {
     let asset = null;
-    if (!FLAT && !SCULPT) {
+    if (!FLAT && !SCULPT && data.mode === 'color') {
       try { asset = await getAsset(resolveSpecies(data.kind).label); }
       catch { asset = null; }
     }
     try {
       animals.spawn(data.kind, {
         id: data.id,
-        body: (sp) => (asset ? new ModelBody(sp, asset, img, data.name, data.mode === 'color')
+        body: (sp) => (asset ? new ModelBody(sp, asset, img, data.name, true)
           : FLAT ? new DrawingBody(sp, img, data.name)
                  : new SculptedBody(sp, img, data.name)),
       });
