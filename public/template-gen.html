@@ -33,6 +33,16 @@ const H = 1024; // template height in pixels
 
 let renderer = null;   // silhouette & page: antialiased
 let hardRenderer = null; // part maps: no antialias, so boundaries stay crisp
+let idxRenderer = null;  // bone indices: linear output, values must not bend
+function getIdxRenderer(W) {
+  if (!idxRenderer) {
+    idxRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
+    idxRenderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  }
+  idxRenderer.setSize(W, H);
+  idxRenderer.setClearColor(0x000000, 0);
+  return idxRenderer;
+}
 function getRenderer(W, hard) {
   if (hard) {
     if (!hardRenderer) hardRenderer = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
@@ -109,6 +119,35 @@ function confMapMaterial() {
   return m;
 }
 
+function indexMapMaterial() {
+  const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        varying vec4 vSkinI2;
+        varying vec4 vSkinW2;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_SKINNING
+          vSkinI2 = skinIndex;
+          vSkinW2 = skinWeight;
+        #else
+          vSkinI2 = vec4(255.0);
+          vSkinW2 = vec4(1.0, 0.0, 0.0, 0.0);
+        #endif`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\n        varying vec4 vSkinI2;\n        varying vec4 vSkinW2;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float di = vSkinI2.x; float dw = vSkinW2.x;
+          if (vSkinW2.y > dw) { dw = vSkinW2.y; di = vSkinI2.y; }
+          if (vSkinW2.z > dw) { dw = vSkinW2.z; di = vSkinI2.z; }
+          if (vSkinW2.w > dw) { dw = vSkinW2.w; di = vSkinI2.w; }
+          diffuseColor.rgb = vec3(floor(di + 0.5) / 255.0);
+        }`);
+  };
+  return m;
+}
+
 function shoot(gltf, cfg, height, mode) {
   const scene = new THREE.Scene();
   const A = assembleBody(gltf, cfg, height); // the animal
@@ -140,6 +179,8 @@ function shoot(gltf, cfg, height, mode) {
     for (const o of [...A.paintable, ...A.facial]) o.material = new THREE.MeshNormalMaterial();
   } else if (mode === 'depth') {
     for (const o of [...A.paintable, ...A.facial]) o.material = new THREE.MeshDepthMaterial();
+  } else if (mode === 'index') {
+    for (const o of [...A.paintable, ...A.facial]) o.material = indexMapMaterial();
   } else { // mask: the whole animal, solid white
     for (const o of [...A.paintable, ...A.facial]) {
       o.material = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -169,12 +210,161 @@ function shoot(gltf, cfg, height, mode) {
   cam.lookAt(0, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2);
 
   const W = Math.round(H * spanZ / spanY);
-  const hard = mode !== 'page';
-  const r = getRenderer(W, hard);
+  const r = mode === 'index' ? getIdxRenderer(W) : getRenderer(W, mode !== 'page');
   r.render(scene, cam);
   const url = r.domElement.toDataURL('image/png');
-  return { url, W, box };
+
+  // what the skeleton calls its parts, and where the eyes really are
+  let boneNames = null;
+  for (const o of A.paintable) {
+    if (o.isSkinnedMesh && o.skeleton) { boneNames = o.skeleton.bones.map((b2) => b2.name); break; }
+  }
+  let eyeBox = null;
+  const eb = new THREE.Box3();
+  const et = new THREE.Box3();
+  for (const o of A.facial) {
+    if (!/eye|pupil/i.test(o.material.name || '')) continue;
+    o.geometry.computeBoundingBox();
+    et.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+    eb.union(et);
+  }
+  if (!eb.isEmpty()) eyeBox = { minY: eb.min.y, maxY: eb.max.y, minZ: eb.min.z, maxZ: eb.max.z };
+
+  return { url, W, box, boneNames, eyeBox };
 }
+
+// ============================================================
+// FEATURE SYNTHESIS
+// Eyebrows, mouth, nostril, tail fur and inner ears, placed by the
+// skeleton's own part map. Drawn once; worn by page and animal alike.
+// ============================================================
+
+function maskStats(maskArr, W) {
+  let n = 0, sx = 0, sy = 0;
+  for (let i = 0; i < maskArr.length; i++) {
+    if (maskArr[i]) { n++; sx += i % W; sy += (i / W) | 0; }
+  }
+  if (n < 30) return null;
+  const cx = sx / n, cy = sy / n;
+  let cxx = 0, cyy = 0, cxy = 0;
+  for (let i = 0; i < maskArr.length; i++) {
+    if (!maskArr[i]) continue;
+    const dx = (i % W) - cx, dy = ((i / W) | 0) - cy;
+    cxx += dx * dx; cyy += dy * dy; cxy += dx * dy;
+  }
+  const ang = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+  return { n, cx, cy, ang, spread: Math.sqrt((cxx + cyy) / n) };
+}
+
+function drawFeatures(fg, W, kind, masks, eyePx) {
+  const F = {
+    hopper: { brow: 1, mouth: 1, tailFur: 1, ear: 1 },
+    prowler: { brow: 1, mouth: 1, tailFur: 1, ear: 1 },
+    stomper: { brow: 1, mouth: 1, tailFur: 1, ear: 1 },
+    slitherer: {},
+    bird: { brow: 1 },
+    butterfly: {},
+  }[kind] || {};
+  const ink = '#241c16';
+  fg.strokeStyle = ink;
+  fg.fillStyle = ink;
+  fg.lineCap = 'round';
+
+  // ---- eyebrow: a friendly arc above the real eye ----
+  if (F.brow && eyePx) {
+    const r = Math.min(H * 0.03, Math.max(H * 0.014, eyePx.h * 0.7));
+    // clear the eye itself, however large it is, before arching the brow
+    const lift = eyePx.h * 1.25 + r * 0.9;
+    fg.lineWidth = Math.max(3, H * 0.007);
+    fg.beginPath();
+    fg.arc(eyePx.x + r * 0.1, eyePx.y - lift, r * 1.15, Math.PI * 1.1, Math.PI * 1.9);
+    fg.stroke();
+  }
+
+  // ---- mouth and nostril on the muzzle ----
+  if (F.mouth && eyePx && masks.head) {
+    // the muzzle tip: the furthest-forward head pixel near the eye's height
+    let tipX = -1, tipY = 0;
+    const arr = masks.head.arr;
+    const yLo = Math.max(0, eyePx.y - H * 0.06), yHi = Math.min(H, eyePx.y + H * 0.16);
+    for (let y = yLo | 0; y < yHi; y++) {
+      for (let x = W - 1; x >= 0; x--) {
+        if (arr[y * W + x]) { if (x > tipX) { tipX = x; tipY = y; } break; }
+      }
+    }
+    // a muzzle points forward of the eye; anything else is not a mouth spot
+    if (tipX > eyePx.x + H * 0.03) {
+      const mLen = Math.min((tipX - eyePx.x) * 0.6, H * 0.09);
+      const y0 = tipY + H * 0.005;
+      fg.lineWidth = Math.max(2.5, H * 0.005);
+      fg.beginPath();
+      fg.moveTo(tipX - H * 0.004, y0);
+      fg.quadraticCurveTo(tipX - mLen * 0.45, y0 + H * 0.026, tipX - mLen, y0 + H * 0.014);
+      fg.stroke();
+      // nostril
+      fg.beginPath();
+      fg.arc(tipX - H * 0.012, tipY - H * 0.014, Math.max(2, H * 0.0045), 0, Math.PI * 2);
+      fg.fill();
+    }
+  }
+
+  // ---- the tail grows fur ----
+  if (F.tailFur && masks.tail) {
+    const st = masks.tail.stats;
+    fg.lineWidth = Math.max(2, H * 0.0032);
+    const arr = masks.tail.arr;
+    const idxs = [];
+    for (let i = 0; i < arr.length; i++) if (arr[i]) idxs.push(i);
+    const strokes = Math.min(150, Math.max(50, (idxs.length / 260) | 0));
+    for (let k = 0; k < strokes; k++) {
+      const i = idxs[(Math.random() * idxs.length) | 0];
+      const x = i % W, y = (i / W) | 0;
+      const a = st.ang + (Math.random() - 0.5) * 0.9;
+      const L = H * (0.014 + Math.random() * 0.016);
+      fg.globalAlpha = 0.3 + Math.random() * 0.3;
+      fg.beginPath();
+      fg.moveTo(x, y);
+      fg.quadraticCurveTo(
+        x + Math.cos(a) * L * 0.5, y + Math.sin(a) * L * 0.5 - L * 0.15,
+        x + Math.cos(a) * L, y + Math.sin(a) * L);
+      fg.stroke();
+    }
+    fg.globalAlpha = 1;
+  }
+
+  // ---- inner ears, one ear at a time: a shared centroid smears the face ----
+  if (F.ear) {
+    for (const m of [masks.earL, masks.earR, masks.ear]) {
+      if (!m) continue;
+      const st = m.stats;
+      const arr = m.arr;
+      fg.globalAlpha = 0.28;
+      for (let i = 0; i < arr.length; i++) {
+        if (!arr[i]) continue;
+        const x = i % W, y = (i / W) | 0;
+        const nx = st.cx + (x - st.cx) * 0.55, ny = st.cy + (y - st.cy) * 0.55;
+        fg.fillRect(nx, ny, 1.6, 1.6);
+      }
+      fg.globalAlpha = 1;
+      fg.lineWidth = Math.max(2, H * 0.003);
+      const idxs = [];
+      for (let i = 0; i < arr.length; i++) if (arr[i]) idxs.push(i);
+      for (let k = 0; k < 10 && idxs.length; k++) {
+        const i = idxs[(Math.random() * idxs.length) | 0];
+        const x = i % W, y = (i / W) | 0;
+        const a = st.ang + (Math.random() - 0.5) * 0.5;
+        const L = H * 0.011;
+        fg.globalAlpha = 0.35;
+        fg.beginPath();
+        fg.moveTo(x, y);
+        fg.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L);
+        fg.stroke();
+      }
+      fg.globalAlpha = 1;
+    }
+  }
+}
+
 
 const loadImg = (url) => new Promise((res) => {
   const im = new Image();
@@ -255,13 +445,98 @@ function detectEdges(sources, maskData, W, threshold, gate, gateMin) {
     const mats = shoot(asset.gltf, asset.cfg, height, 'mats');
     const normals = shoot(asset.gltf, asset.cfg, height, 'normals');
     const depth = shoot(asset.gltf, asset.cfg, height, 'depth');
+    const indexShot = shoot(asset.gltf, asset.cfg, height, 'index');
     const W = page.W;
 
-    const [pageImg, maskImg, bonesImg, matsImg, normalsImg, depthImg, confImg] = await Promise.all(
-      [page, mask, bones, mats, normals, depth, conf].map((p) => loadImg(p.url)));
+    const [pageImg, maskImg, bonesImg, matsImg, normalsImg, depthImg, confImg, indexImg] = await Promise.all(
+      [page, mask, bones, mats, normals, depth, conf, indexShot].map((p) => loadImg(p.url)));
 
+    // per-pixel body parts, by bone NAME
+    const idxData = pixelsOf(indexImg, W);
     const maskData = pixelsOf(maskImg, W);
     const confData = pixelsOf(confImg, W);
+    const names = indexShot.boneNames || [];
+    // diagnostic: which bone names actually own pixels
+    {
+      const hist = new Map();
+      for (let i = 0; i < W * H; i += 7) {
+        if (idxData[i * 4 + 3] < 128) continue;
+        const bi = Math.round(idxData[i * 4]);
+        const nm = names[bi] || ('?' + bi);
+        hist.set(nm, (hist.get(nm) || 0) + 1);
+      }
+      const top = [...hist.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10);
+      console.log('[parts ' + kind + '] ' + top.map(([n, c]) => n + ':' + c).join(' '));
+    }
+    const group = (test) => {
+      const arr = new Uint8Array(W * H);
+      let any = 0;
+      for (let i = 0; i < W * H; i++) {
+        if (idxData[i * 4 + 3] < 128) continue;
+        const bi = Math.round(idxData[i * 4]);
+        const nm = names[bi];
+        if (nm && test(nm)) { arr[i] = 1; any++; }
+      }
+      if (!any) return null;
+      const stats = maskStats(arr, W);
+      return stats ? { arr, stats } : null;
+    };
+    // GLTFLoader strips punctuation from names: 'Ear1.L' arrives as 'Ear1L'
+    const masks = {
+      head: group((n) => /^head/i.test(n)),
+      tail: group((n) => /^tail/i.test(n)),
+      // ear ROOT bones often double as skull bones in these rigs (the whole
+      // bunny head is weighted to Ear1R) — only the tip bones are the ear
+      face: group((n) => /^(head|neck)/i.test(n)),
+      earL: group((n) => /^ear[2-9]/i.test(n) && /l$/i.test(n)),
+      earR: group((n) => /^ear[2-9]/i.test(n) && /r$/i.test(n)),
+      ear: group((n) => /^ear[2-9]/i.test(n) && !/[lr]$/i.test(n)),
+    };
+    // ---- the eye, found by evidence ----
+    // Dark interior pixels inside the head/neck bone region ARE the eye (and
+    // for some models a marking or two). The eye-mesh bounding box, when it
+    // exists and lands inside that region, narrows the search; on some rigs
+    // it centres on the neck and must be ignored.
+    let eyePx = null;
+    {
+      const pd = pixelsOf(pageImg, W);
+      const inSil = (i) => maskData[i * 4 + 3] > 200;
+      const darkAt = (i) => pd[i * 4 + 3] > 200 && pd[i * 4] < 70
+        && inSil(i) && inSil(i - 4) && inSil(i + 4) && inSil(i - 4 * W) && inSil(i + 4 * W);
+      let anchor = null;
+      if (page.eyeBox) {
+        const bx = page.box;
+        const u = ((page.eyeBox.minZ + page.eyeBox.maxZ) / 2 - bx.min.z) / (bx.max.z - bx.min.z);
+        const v = ((page.eyeBox.minY + page.eyeBox.maxY) / 2 - bx.min.y) / (bx.max.y - bx.min.y);
+        const ax = u * W, ay = (1 - v) * H;
+        const ai = (ay | 0) * W + (ax | 0);
+        if (masks.face && masks.face.arr[ai]) anchor = { x: ax, y: ay };
+      }
+      const collect = (test) => {
+        let n = 0, sx = 0, sy = 0;
+        for (let y = 4; y < H - 4; y++) {
+          for (let x = 4; x < W - 4; x++) {
+            const i = y * W + x;
+            if (!test(x, y, i) || !darkAt(i)) continue;
+            n++; sx += x; sy += y;
+          }
+        }
+        return n >= 20 ? { n, x: sx / n, y: sy / n } : null;
+      };
+      let hit = null;
+      if (anchor) {
+        const win = H * 0.09;
+        hit = collect((x, y) => Math.abs(x - anchor.x) < win && Math.abs(y - anchor.y) < win);
+      }
+      if (!hit && masks.face) {
+        hit = collect((x, y, i) => masks.face.arr[i] === 1);
+      }
+      if (hit) eyePx = { x: hit.x, y: hit.y, h: Math.max(5, Math.sqrt(hit.n) / 2) };
+    }
+    const feat = document.createElement('canvas');
+    feat.width = W; feat.height = H;
+    drawFeatures(feat.getContext('2d'), W, kind, masks, eyePx);
+
     // part boundaries: only where both sides are confidently one part
     const boneMarks = detectEdges([pixelsOf(bonesImg, W)], maskData, W, 56, confData, 213);
     const matMarks = detectEdges([pixelsOf(matsImg, W)], maskData, W, 56);
@@ -306,20 +581,60 @@ function detectEdges(sources, maskData, W, threshold, gate, gateMin) {
     lg.putImageData(li, 0, 0);
     // a touch of weight so the lines read like the outline's family
     for (const [ox, oy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) g.drawImage(line, ox, oy);
+    // the synthesized features belong on the page too — the child colours a
+    // proper animal with a face, furry tail and ears
+    g.drawImage(feat, 0, 0);
 
-    // The same interior lines, alone and softened, become the animal's
-    // surface detailing on the wall: ear folds, toes, tail bands, jaw —
-    // worn like gentle shading, never like ink.
+    // The interior lines, softened, become the animal's surface detailing on
+    // the wall; the features ride on top at full strength — eyebrows, mouth,
+    // tail fur and ears are part of every animal, coloured or not.
     const det = document.createElement('canvas');
     det.width = W; det.height = H;
     const dg = det.getContext('2d');
+    dg.globalAlpha = 0.45;
     dg.filter = 'blur(1.2px)';
     for (const [ox, oy] of [[0, 0], [1, 0], [0, 1]]) dg.drawImage(line, ox, oy);
     dg.filter = 'none';
+    dg.globalAlpha = 1;
+    dg.filter = 'blur(0.6px)';
+    dg.drawImage(feat, 0, 0);
+    dg.filter = 'none';
+
+    // a debug plate: where the anchors landed
+    const dbg = document.createElement('canvas');
+    dbg.width = W; dbg.height = H;
+    const xg = dbg.getContext('2d');
+    xg.fillStyle = '#fff';
+    xg.fillRect(0, 0, W, H);
+    xg.drawImage(c, 0, 0);
+    const tint = (m, col) => {
+      if (!m) return;
+      xg.fillStyle = col;
+      xg.globalAlpha = 0.25;
+      for (let i = 0; i < m.arr.length; i++) {
+        if (m.arr[i]) xg.fillRect(i % W, (i / W) | 0, 1, 1);
+      }
+      xg.globalAlpha = 1;
+    };
+    tint(masks.head, '#e33');
+    tint(masks.tail, '#36e');
+    tint(masks.earL, '#3a3');
+    tint(masks.earR, '#a3a');
+    tint(masks.ear, '#3aa');
+    if (eyePx) {
+      xg.strokeStyle = '#f0f';
+      xg.lineWidth = 4;
+      xg.beginPath();
+      xg.arc(eyePx.x, eyePx.y, 14, 0, Math.PI * 2);
+      xg.moveTo(eyePx.x - 22, eyePx.y); xg.lineTo(eyePx.x + 22, eyePx.y);
+      xg.moveTo(eyePx.x, eyePx.y - 22); xg.lineTo(eyePx.x, eyePx.y + 22);
+      xg.stroke();
+    }
 
     out[kind] = {
       template: c.toDataURL('image/png'),
       detail: det.toDataURL('image/png'),
+      debug: dbg.toDataURL('image/png'),
       mask: mask.url,
       w: W, h: H,
       box: {

@@ -34,6 +34,10 @@ const OUT = 'c:/Users/prajw/Desktop/Digital forest/public/templates';
       Buffer.from(t.mask.split(',')[1], 'base64'));
     fs.writeFileSync(path.join(OUT, kind + '.detail.png'),
       Buffer.from(t.detail.split(',')[1], 'base64'));
+    if (t.debug) {
+      fs.writeFileSync(path.join(OUT, kind + '.debug.png'),
+        Buffer.from(t.debug.split(',')[1], 'base64'));
+    }
     index[kind] = { file: kind + '.png', mask: kind + '.mask.png', detail: kind + '.detail.png', w: t.w, h: t.h, box: t.box, title: t.title };
     console.log(kind, t.w + 'x' + t.h, JSON.stringify(t.box));
   }
