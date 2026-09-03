@@ -2,7 +2,6 @@
  "hopper": {
   "file": "hopper.png",
   "mask": "hopper.mask.png",
-  "detail": "hopper.detail.png",
   "w": 538,
   "h": 1024,
   "box": {
@@ -16,7 +15,6 @@
  "prowler": {
   "file": "prowler.png",
   "mask": "prowler.mask.png",
-  "detail": "prowler.detail.png",
   "w": 2251,
   "h": 1024,
   "box": {
@@ -30,7 +28,6 @@
  "stomper": {
   "file": "stomper.png",
   "mask": "stomper.mask.png",
-  "detail": "stomper.detail.png",
   "w": 1801,
   "h": 1024,
   "box": {
@@ -44,7 +41,6 @@
  "slitherer": {
   "file": "slitherer.png",
   "mask": "slitherer.mask.png",
-  "detail": "slitherer.detail.png",
   "w": 971,
   "h": 1024,
   "box": {
@@ -58,7 +54,6 @@
  "bird": {
   "file": "bird.png",
   "mask": "bird.mask.png",
-  "detail": "bird.detail.png",
   "w": 917,
   "h": 1024,
   "box": {
@@ -72,7 +67,6 @@
  "butterfly": {
   "file": "butterfly.png",
   "mask": "butterfly.mask.png",
-  "detail": "butterfly.detail.png",
   "w": 1118,
   "h": 1024,
   "box": {

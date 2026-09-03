@@ -185,7 +185,7 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTe
           // the animal's own anatomy lines, worn as soft shading: ear folds,
           // toes, tail bands, the line of the jaw
           float dLine = texture2D(uDetail, duv).a * uDetailOn;
-          col *= 1.0 - dLine * 0.85;
+          col *= 1.0 - dLine * 0.42;
           // fur grain, two scales, so the surface stops reading as clay
           vec2 gAspect = vec2((uMax.z - uMin.z) / max(0.001, uMax.y - uMin.y), 1.0);
           float g1 = djNoise(duv * gAspect * 90.0);
