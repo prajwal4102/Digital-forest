@@ -209,7 +209,7 @@ export class ProxyBody {
 // ============================================================
 
 export class Animal {
-  constructor({ species, body, map, groundHeight, scene, at }) {
+  constructor({ species, body, map, groundHeight, scene, at, intro }) {
     this.s = typeof species === 'string' ? SPECIES[species] : species;
     this.body = body;
     this.map = map;
@@ -245,6 +245,133 @@ export class Animal {
     this.shadow.geometry.rotateX(-Math.PI / 2);
     this.shadow.renderOrder = 3;
     scene.add(this.shadow);
+
+    // THE MAGIC MOMENT: the child's page drifts down at centre stage, bursts
+    // into sparkles, and the animal steps out of it. Skipped for creatures
+    // restored from the server's memory - only a fresh sending earns it.
+    // (Last in the constructor: it hides parts built above.)
+    this.introT = -1;
+    if (intro) this.beginIntro(intro);
+  }
+
+  // ---------- the arrival ----------
+  beginIntro(img) {
+    const aspect = img.width / Math.max(1, img.height);
+    const ph = Math.min(1.7, Math.max(1.0, this.s.height * 1.05));
+    const tex = new THREE.Texture(img);
+    tex.needsUpdate = true;
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, side: THREE.DoubleSide,
+      depthWrite: false, fog: false,
+    });
+    this.pagePlane = new THREE.Mesh(new THREE.PlaneGeometry(ph * aspect, ph), mat);
+    this.pagePlane.renderOrder = 4;
+    this.scene.add(this.pagePlane);
+    this.body.object3D.visible = false;
+    this.shadow.visible = false;
+    this.introT = 0;
+    this.sparks = null;
+  }
+
+  makeSparks(x, y, z) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,252,220,1)');
+    grad.addColorStop(0.4, 'rgba(255,236,160,0.6)');
+    grad.addColorStop(1, 'rgba(255,236,160,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    const group = [];
+    for (let i = 0; i < 22; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, opacity: 0.95,
+      }));
+      const sc = rand(0.08, 0.3);
+      sp.scale.set(sc, sc, 1);
+      sp.position.set(x, y, z);
+      const a = rand(0, TAU);
+      sp.userData.vel = new THREE.Vector3(
+        Math.cos(a) * rand(0.4, 1.6), rand(0.8, 2.6), Math.sin(a) * rand(0.4, 1.6));
+      this.scene.add(sp);
+      group.push(sp);
+    }
+    return group;
+  }
+
+  updateIntro(dt, t) {
+    this.introT += dt;
+    const T = this.introT;
+    const gy = this.groundHeight(this.pos.x, this.pos.y);
+    const o = this.body.object3D;
+    o.position.set(this.pos.x, o.position.y, this.pos.y);
+
+    // the page drifts down, rocking gently, showing itself off
+    if (this.pagePlane) {
+      const drop = clamp(T / 1.7, 0, 1);
+      const e = 1 - (1 - drop) * (1 - drop); // ease out
+      this.pagePlane.position.set(
+        this.pos.x,
+        gy + 3.2 - e * 2.0 + Math.sin(t * 2.2) * 0.03,
+        this.pos.y);
+      this.pagePlane.rotation.y = Math.sin(T * 1.5) * 0.4;
+      this.pagePlane.rotation.z = Math.sin(T * 1.9 + 1) * 0.06;
+    }
+
+    // the burst: page becomes sparkles, sparkles become the animal
+    if (T >= 1.7 && !this.sparks) {
+      this.sparks = this.makeSparks(this.pos.x, gy + 1.2, this.pos.y);
+    }
+    if (this.pagePlane && T >= 1.7) {
+      const k = clamp((T - 1.7) / 0.4, 0, 1);
+      const sc = 1 - k * 0.96;
+      this.pagePlane.scale.set(sc, sc, sc);
+      this.pagePlane.material.opacity = 1 - k;
+      if (k >= 1) {
+        this.scene.remove(this.pagePlane);
+        this.pagePlane.geometry.dispose();
+        this.pagePlane.material.map.dispose();
+        this.pagePlane.material.dispose();
+        this.pagePlane = null;
+      }
+    }
+    if (this.sparks) {
+      for (const sp of this.sparks) {
+        sp.position.addScaledVector(sp.userData.vel, dt);
+        sp.userData.vel.y -= 2.2 * dt;
+        sp.material.opacity -= dt * 0.9;
+      }
+      if (T > 3.0) {
+        for (const sp of this.sparks) {
+          this.scene.remove(sp);
+          sp.material.dispose();
+        }
+        this.sparks = null;
+      }
+    }
+
+    // the animal grows out of the burst
+    if (T >= 1.85) {
+      if (!o.visible) { o.visible = true; this.shadow.visible = true; }
+      const k = clamp((T - 1.85) / 0.75, 0, 1);
+      const back = 1 + 0.12 * Math.sin(k * Math.PI); // a small proud puff
+      o.scale.setScalar((0.5 + 0.5 * k) * back);
+      this.body.update(dt, {
+        state: 'look', speed: 0, moving: false,
+        groundY: gy, t, slope: 0, heading: this.heading,
+      });
+      this.shadow.position.set(this.pos.x, gy + 0.03, this.pos.y);
+    }
+
+    if (T >= 3.1) {
+      o.scale.setScalar(1);
+      this.introT = -1;
+      this.enterState('look'); // it looks around at its new world first
+    }
   }
 
   // ---------- behaviour ----------
@@ -336,6 +463,7 @@ export class Animal {
 
   // ---------- per frame ----------
   update(dt, t, herd) {
+    if (this.introT >= 0) { this.updateIntro(dt, t); return; }
     this.stateTime += dt;
 
     // A drawn flower does not go anywhere. It just grows where it was put.
@@ -435,6 +563,8 @@ export class Animal {
   }
 
   dispose() {
+    if (this.pagePlane) { this.scene.remove(this.pagePlane); }
+    if (this.sparks) { for (const sp of this.sparks) this.scene.remove(sp); }
     this.scene.remove(this.body.object3D);
     this.scene.remove(this.shadow);
     if (this.body.dispose) this.body.dispose();
@@ -464,10 +594,16 @@ export class AnimalManager {
 
     // A plant belongs in the open where it can be seen; everything else walks
     // in from the back rather than popping up in front of the child.
-    const band = s.rooted ? { z: 1.5, spread: 4 } : { z: this.map.zMin + 1.5, spread: 2.5 };
+    // A fresh sending transforms in the open middle where everyone can see;
+    // restored creatures walk in from the back as before.
+    const band = s.rooted ? { z: 1.5, spread: 4 }
+      : { z: this.map.zMin + 1.5, spread: 2.5 };
+    const centreStage = opts.intro && !s.rooted;
     let entry = null;
     for (let tries = 0; tries < 12; tries++) {
-      const cand = this.map.randomOpen(band);
+      const cand = centreStage
+        ? this.map.nearestOpen(rand(-1.8, 1.8), rand(2.0, 3.6))
+        : this.map.randomOpen(band);
       if (!cand) continue;
       const clear = this.animals.every((o) =>
         Math.hypot(cand.x - o.pos.x, cand.z - o.pos.y)
@@ -482,6 +618,7 @@ export class AnimalManager {
     const a = new Animal({
       species: s, body, map: this.map,
       groundHeight: this.groundHeight, scene: this.scene, at: entry,
+      intro: opts.intro || null,
     });
     a.id = opts.id;
     this.animals.push(a);

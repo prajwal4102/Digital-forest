@@ -2043,7 +2043,7 @@ const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12
 const FLAT = location.hash.includes('flat');
 const SCULPT = location.hash.includes('sculpt');
 loadAnimalManifest();
-function addDrawing(data) {
+function addDrawing(data, live) {
   const img = new Image();
   img.onload = async () => {
     let asset = null;
@@ -2054,6 +2054,9 @@ function addDrawing(data) {
     try {
       animals.spawn(data.kind, {
         id: data.id,
+        // the transformation moment is for the child watching right now;
+        // creatures restored after a reload just walk in from the trees
+        intro: live ? img : null,
         body: (sp) => (asset ? new ModelBody(sp, asset, img, data.name, true)
           : FLAT ? new DrawingBody(sp, img, data.name)
                  : new SculptedBody(sp, img, data.name)),
@@ -2081,8 +2084,8 @@ function addDrawing(data) {
     ws.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.type === 'init') for (const c of msg.creatures) addDrawing(c);
-      else if (msg.type === 'creature') addDrawing(msg.creature);
+      if (msg.type === 'init') for (const c of msg.creatures) addDrawing(c, false);
+      else if (msg.type === 'creature') addDrawing(msg.creature, true);
       else if (msg.type === 'remove') animals.remove(msg.id);
       else if (msg.type === 'clear') animals.clear();
     };
