@@ -346,7 +346,7 @@ export class ModelBody {
         if (this.current) this.current.reset().fadeIn(0.25).play();
       }
     });
-    this.play(this.resolve(['Jump_Land', 'Yes', 'Wave', 'Idle', 'Flying_Idle', 'Snake_Idle']), true);
+    this.play(this.resolve(['Idle', 'Flying_Idle', 'Snake_Idle']));
 
     if (name) {
       this.label = makeNameLabel(name);
@@ -374,7 +374,9 @@ export class ModelBody {
     const a = this.action(nm);
     if (!a) return;
     if (once) {
-      // a flourish layered over the base action, then back to it
+      // a flourish layered over the base action, then back to it — and never
+      // two flourishes at once: overlapping full-weight clips mangle the rig
+      if (this.oneshot && this.oneshot !== a) this.oneshot.fadeOut(0.12);
       a.reset();
       a.setLoop(THREE.LoopOnce, 1);
       a.clampWhenFinished = false;
@@ -393,7 +395,7 @@ export class ModelBody {
 
   // a joyful reaction on arrival: whatever this pack has that reads happy
   celebrate() {
-    this.play(this.resolve(['Yes', 'Wave', 'Dance', 'Jump', 'Idle_2']), true);
+    this.play(this.resolve(['Yes', 'Wave', 'Dance', 'Idle_2', 'Jump']), true);
   }
 
   // which clip suits the mood — resolved against whatever this pack offers
