@@ -280,7 +280,11 @@ export class Animal {
     this.flightFrom = new THREE.Vector3(side * rand(6, 8.5), rand(5.2, 6.2), rand(-8, -5));
     this.flightMid = new THREE.Vector3(side * rand(2, 3.5), rand(3.2, 3.9), rand(-2, 0.5));
     const gy = this.groundHeight(this.pos.x, this.pos.y);
-    this.flightTo = new THREE.Vector3(this.pos.x, gy + 1.3, this.pos.y);
+    // The magic must happen exactly where the animal will BE: the page
+    // hovers and bursts at this species' mid-body height, so the creature
+    // grows up into the very space the light occupies.
+    const bodyMid = gy + (this.s.hover || 0) + this.s.height * 0.55;
+    this.flightTo = new THREE.Vector3(this.pos.x, bodyMid, this.pos.y);
 
     this.glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: introTextures().glow, transparent: true, depthWrite: false,
@@ -350,7 +354,7 @@ export class Animal {
       const hT = Math.max(0, T - FLY_END);
       const g = clamp(hT / 2.2, 0, 1);
       const hx = this.flightTo.x + Math.sin(hT * 1.3) * 0.05;
-      const hy = this.flightTo.y + Math.sin(hT * 2.0) * 0.06 + g * g * 0.15;
+      const hy = this.flightTo.y + Math.sin(hT * 2.0) * 0.05 - g * g * 0.06;
       const hz = this.flightTo.z;
 
       const mixK = clamp((T - (FLY_END - 0.5)) / 0.5, 0, 1);
