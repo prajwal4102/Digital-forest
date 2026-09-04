@@ -18,44 +18,42 @@
   #app { display: flex; flex-direction: column; height: 100%; padding: 10px; gap: 10px; }
 
   /* top bar */
-  #topbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  #topbar { display: flex; align-items: center; gap: 10px; }
+  #backBtn {
+    border: none; border-radius: 12px; padding: 10px 14px; font-size: 1rem; font-weight: 800;
+    background: rgba(255,255,255,.15); color: #eafff4; cursor: pointer; white-space: nowrap;
+  }
   #title { color: #eafff4; font-weight: 800; font-size: 1.15rem; margin-right: auto; white-space: nowrap; }
   #name {
     border: none; border-radius: 12px; padding: 10px 14px; font-size: 1rem;
-    width: 180px; background: rgba(255,255,255,.92); outline: none;
+    width: 200px; background: rgba(255,255,255,.92); outline: none;
   }
-  .kindBtn {
-    border: 3px solid transparent; border-radius: 14px; padding: 8px 10px;
-    font-size: .95rem; font-weight: 700; background: rgba(255,255,255,.15);
-    color: #eafff4; cursor: pointer; white-space: nowrap;
-  }
-  .kindBtn.active { background: #fff; color: #0b4030; border-color: #ffd75e; }
 
   /* main row: tools + canvas */
   #main { flex: 1; display: flex; gap: 10px; min-height: 0; }
   #tools {
-    display: grid; grid-template-columns: repeat(2, 46px); gap: 8px;
-    align-content: start; justify-items: center;
-    padding: 10px 8px; background: rgba(0,0,0,.22); border-radius: 18px;
+    width: 128px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
+    padding: 10px 6px; background: rgba(0,0,0,.22); border-radius: 18px;
     overflow-y: auto;
   }
-  .divider { grid-column: 1 / -1; }
+  #swatches { display: grid; grid-template-columns: repeat(4, 26px); gap: 5px; }
   .swatch {
-    width: 42px; height: 42px; border-radius: 50%;
-    border: 3px solid rgba(255,255,255,.35); cursor: pointer; flex-shrink: 0;
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35); cursor: pointer;
   }
-  .swatch.active { border-color: #ffd75e; transform: scale(1.12); box-shadow: 0 0 0 3px rgba(255,215,94,.35); }
-  .divider { width: 70%; height: 1px; background: rgba(255,255,255,.2); margin: 4px 0; flex-shrink: 0; }
-  .sizeBtn {
-    width: 42px; height: 42px; border-radius: 12px; border: 3px solid transparent;
-    background: rgba(255,255,255,.15); cursor: pointer; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .sizeBtn.active { border-color: #ffd75e; background: rgba(255,255,255,.3); }
-  .sizeBtn i { background: #fff; border-radius: 50%; display: block; }
+  .swatch.active { border-color: #ffd75e; transform: scale(1.18); box-shadow: 0 0 0 2px rgba(255,215,94,.4); }
+  #pickerRow { display: flex; gap: 6px; }
+  #hueStrip, #shadeStrip { border-radius: 8px; cursor: pointer; touch-action: none; }
+  #brushRow { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  #brushSize { width: 104px; }
+  #brushPreviewWrap { height: 46px; display: flex; align-items: center; justify-content: center; }
+  #brushPreview { border-radius: 50%; background: #1c1c1c; box-shadow: 0 0 0 2px rgba(255,255,255,.3); }
+  .divider { width: 70%; height: 1px; background: rgba(255,255,255,.2); }
+  #toolRow { display: flex; gap: 6px; }
   .toolBtn {
-    width: 42px; height: 42px; border-radius: 12px; border: 3px solid transparent;
-    background: rgba(255,255,255,.15); cursor: pointer; font-size: 20px; flex-shrink: 0;
+    width: 35px; height: 40px; border-radius: 10px; border: 2px solid transparent;
+    background: rgba(255,255,255,.15); cursor: pointer; font-size: 17px; flex-shrink: 0;
   }
   .toolBtn.active { border-color: #ffd75e; background: rgba(255,255,255,.3); }
 
@@ -77,7 +75,34 @@
   #sendBtn:active { transform: scale(.97); }
   #sendBtn:disabled { opacity: .5; }
 
-  /* sent overlay */
+  /* choose-your-animal gallery */
+  #chooser {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    flex-direction: column; align-items: center; gap: 14px;
+    background: linear-gradient(160deg, #0b4030, #145c40);
+    padding: 18px; overflow-y: auto; touch-action: pan-y;
+  }
+  #chooser.show { display: flex; }
+  #chooserTitle { color: #eafff4; font-size: 1.7rem; font-weight: 800; text-align: center; }
+  #chooserSub { color: rgba(234,255,244,.7); margin-top: -8px; }
+  #cards {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px; width: 100%; max-width: 1100px;
+  }
+  .animalCard {
+    background: #fff; border: 4px solid transparent; border-radius: 18px;
+    padding: 10px; cursor: pointer; text-align: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,.3);
+    transition: transform .12s;
+  }
+  .animalCard:active { transform: scale(.96); }
+  .animalCard img { width: 100%; height: 130px; object-fit: contain; pointer-events: none; }
+  .animalCard .cardEmoji { font-size: 86px; line-height: 130px; height: 130px; }
+  .animalCard .cardName {
+    font-weight: 800; font-size: 1.15rem; color: #0b4030; margin-top: 6px;
+  }
+
+  /* sent overlay (freehand mode only) */
   #overlay {
     position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; flex-direction: column; gap: 14px;
@@ -92,7 +117,7 @@
   #connBadge {
     position: fixed; top: 8px; left: 50%; transform: translateX(-50%);
     background: #a33; color: #fff; font-size: .85rem; padding: 6px 14px;
-    border-radius: 999px; display: none; z-index: 20;
+    border-radius: 999px; display: none; z-index: 40;
   }
   #connBadge.show { display: block; }
 </style>
@@ -100,19 +125,9 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <div id="title">🎨 Draw!</div>
+    <button id="backBtn">🐾 Animals</button>
+    <div id="title">🎨 Colour your animal!</div>
     <input id="name" placeholder="Your name (optional)" maxlength="20" autocomplete="off">
-    <button class="kindBtn active" data-kind="prowler">🦊 Fox</button>
-    <button class="kindBtn" data-kind="stomper">🐂 Bull</button>
-    <button class="kindBtn" data-kind="hopper">🐰 Rabbit</button>
-    <button class="kindBtn" data-kind="slitherer">🐍 Snake</button>
-    <button class="kindBtn" data-kind="bird">🐔 Chicken</button>
-    <button class="kindBtn" data-kind="butterfly">🐝 Bee</button>
-    <button class="kindBtn" data-kind="dog">🐶 Dog</button>
-    <button class="kindBtn" data-kind="deer">🦌 Deer</button>
-    <button class="kindBtn" data-kind="stag">🫎 Stag</button>
-    <button class="kindBtn" data-kind="horse">🐴 Horse</button>
-    <button class="kindBtn" data-kind="plant">🌸 Flower</button>
   </div>
   <div id="main">
     <div id="tools"></div>
@@ -121,6 +136,11 @@
   <div id="bottombar">
     <button id="sendBtn">🌿 Send to the Jungle! 🌿</button>
   </div>
+</div>
+<div id="chooser">
+  <div id="chooserTitle">Which animal will you bring to life?</div>
+  <div id="chooserSub">Tap one to start colouring</div>
+  <div id="cards"></div>
 </div>
 <div id="overlay">
   <div class="big" id="ovEmoji">🦁</div>

@@ -15,16 +15,26 @@ const nameInput = document.getElementById('name');
 const toolsEl = document.getElementById('tools');
 
 const COLORS = [
-  '#1c1c1c', '#e63946', '#f4a261', '#ffd75e',
-  '#7cb518', '#2a9d8f', '#219ebc', '#3a5bd9',
-  '#8338ec', '#ff5da2', '#8d5a3a', '#ffffff',
+  '#1c1c1c', '#6c757d', '#ffffff', '#fde4cf',
+  '#e63946', '#d00000', '#ff5da2', '#ff8fab',
+  '#f4a261', '#ff7b00', '#ffd75e', '#fff3a0',
+  '#7cb518', '#2d6a4f', '#2a9d8f', '#90e0c9',
+  '#219ebc', '#3a5bd9', '#8ecae6', '#5e60ce',
+  '#8338ec', '#c77dff', '#8d5a3a', '#5c4033',
 ];
-const SIZES = [5, 12, 24, 44];
 
 // ---------- colouring templates ----------
 // Each template is a photograph of the actual 3D animal the wall will use,
 // so the colours land exactly where the child puts them. If the fetch fails
 // (or a kind has no template, like the flower) the pad stays freehand.
+const KIND_NAMES = {
+  prowler: 'Fox', stomper: 'Bull', hopper: 'Rabbit', slitherer: 'Snake',
+  bird: 'Chicken', butterfly: 'Bee', dog: 'Dog', deer: 'Deer',
+  stag: 'Stag', horse: 'Horse', plant: 'Flower',
+};
+const KIND_ORDER = ['hopper', 'dog', 'prowler', 'deer', 'stag', 'horse',
+  'stomper', 'bird', 'slitherer', 'butterfly', 'plant'];
+
 let templates = null;      // kind -> {img, mask, w, h}
 let tpl = null;            // the active template, or null for freehand
 let tplRect = null;        // where the page sits on the pad, in CSS px
@@ -44,9 +54,12 @@ async function loadTemplates() {
       mask.src = 'templates/' + t.mask;
     })));
     templates = loaded;
+    buildChooser();
     setKind(kind);
+    showChooser();
   } catch (e) {
     console.warn('no colouring templates, staying freehand:', e);
+    buildChooser();
   }
 }
 
@@ -55,7 +68,53 @@ function setKind(k) {
   tpl = (templates && templates[k]) || null;
   layoutTemplate();
   clearPad();
+  document.getElementById('title').textContent =
+    tpl ? '🎨 Colour your ' + (KIND_NAMES[k] || k) + '!' : '🎨 Draw your ' + (KIND_NAMES[k] || k) + '!';
 }
+
+// ---------- choose-your-animal gallery ----------
+// A clear picture beats a word: each card shows the very page the child
+// will colour.
+function buildChooser() {
+  const cards = document.getElementById('cards');
+  cards.innerHTML = '';
+  const idxFiles = templates || {};
+  for (const k of KIND_ORDER) {
+    const card = document.createElement('div');
+    card.className = 'animalCard kindBtn';
+    card.dataset.kind = k;
+    if (idxFiles[k]) {
+      const im = document.createElement('img');
+      im.src = 'templates/' + k + '.png';
+      card.appendChild(im);
+    } else if (k === 'plant') {
+      const em = document.createElement('div');
+      em.className = 'cardEmoji';
+      em.textContent = '🌸';
+      card.appendChild(em);
+    } else {
+      continue; // no template and not the flower: don't offer it
+    }
+    const nm = document.createElement('div');
+    nm.className = 'cardName';
+    nm.textContent = KIND_NAMES[k] || k;
+    card.appendChild(nm);
+    card.onclick = () => {
+      setKind(k);
+      document.getElementById('chooser').classList.remove('show');
+    };
+    cards.appendChild(card);
+  }
+}
+
+function showChooser() {
+  document.getElementById('chooser').classList.add('show');
+}
+
+document.getElementById('backBtn').onclick = () => {
+  if (hasInk && !confirm('Choose another animal? Your colouring starts over.')) return;
+  showChooser();
+};
 
 function layoutTemplate() {
   if (!tpl) { tplRect = null; composite(); return; }
@@ -69,7 +128,7 @@ function layoutTemplate() {
 }
 
 let color = COLORS[0];
-let brushSize = SIZES[1];
+let brushSize = 14;
 let erasing = false;
 let kind = 'prowler';
 let drawing = false;
@@ -79,50 +138,122 @@ let undoStack = [];
 const UNDO_MAX = 12;
 
 // ---------- toolbar ----------
+let hue = 10; // the rainbow strip's current hue
+
 function buildTools() {
+  toolsEl.innerHTML = '';
+
+  // quick swatches
+  const sw = document.createElement('div');
+  sw.id = 'swatches';
   for (const c of COLORS) {
     const b = document.createElement('button');
     b.className = 'swatch' + (c === color ? ' active' : '');
     b.style.background = c;
-    if (c === '#ffffff') b.style.borderColor = 'rgba(0,0,0,.25)';
+    if (c === '#ffffff' || c === '#fff3a0' || c === '#fde4cf') b.style.borderColor = 'rgba(0,0,0,.25)';
     b.onclick = () => {
       color = c;
       erasing = false;
       refreshTools();
     };
     b.dataset.color = c;
-    toolsEl.appendChild(b);
+    sw.appendChild(b);
   }
+  toolsEl.appendChild(sw);
+
+  // every colour there is: a rainbow strip and a light-dark strip
+  const row = document.createElement('div');
+  row.id = 'pickerRow';
+  const hueC = document.createElement('canvas');
+  hueC.id = 'hueStrip';
+  hueC.width = 30; hueC.height = 150;
+  const shadeC = document.createElement('canvas');
+  shadeC.id = 'shadeStrip';
+  shadeC.width = 30; shadeC.height = 150;
+  row.appendChild(hueC);
+  row.appendChild(shadeC);
+  toolsEl.appendChild(row);
+
+  const paintHue = () => {
+    const g = hueC.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 150);
+    for (let i = 0; i <= 12; i++) grad.addColorStop(i / 12, 'hsl(' + (i * 30) + ',95%,55%)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 30, 150);
+  };
+  const paintShade = () => {
+    const g = shadeC.getContext('2d');
+    const grad = g.createLinearGradient(0, 0, 0, 150);
+    grad.addColorStop(0, 'hsl(' + hue + ',90%,92%)');
+    grad.addColorStop(0.5, 'hsl(' + hue + ',90%,52%)');
+    grad.addColorStop(1, 'hsl(' + hue + ',90%,14%)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 30, 150);
+  };
+  paintHue();
+  paintShade();
+  const pickFrom = (cv, ev) => {
+    const r = cv.getBoundingClientRect();
+    const y = Math.max(0, Math.min(cv.height - 1, (ev.clientY - r.top) * (cv.height / r.height)));
+    const d = cv.getContext('2d').getImageData(0, y, 1, 1).data;
+    color = 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')';
+    erasing = false;
+    if (cv === hueC) { hue = Math.round((y / 150) * 360); paintShade(); }
+    refreshTools();
+  };
+  for (const cv of [hueC, shadeC]) {
+    cv.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      cv.setPointerCapture(e.pointerId);
+      pickFrom(cv, e);
+      const move = (e2) => pickFrom(cv, e2);
+      cv.addEventListener('pointermove', move);
+      cv.addEventListener('pointerup', () => cv.removeEventListener('pointermove', move), { once: true });
+    });
+  }
+
   const d1 = document.createElement('div');
   d1.className = 'divider';
   toolsEl.appendChild(d1);
 
-  for (const s of SIZES) {
-    const b = document.createElement('button');
-    b.className = 'sizeBtn' + (s === brushSize ? ' active' : '');
-    b.innerHTML = `<i style="width:${Math.min(30, s)}px;height:${Math.min(30, s)}px"></i>`;
-    b.onclick = () => { brushSize = s; refreshTools(); };
-    b.dataset.size = s;
-    toolsEl.appendChild(b);
-  }
+  // brush size: one smooth slider, previewed live
+  const brushRow = document.createElement('div');
+  brushRow.id = 'brushRow';
+  const prevWrap = document.createElement('div');
+  prevWrap.id = 'brushPreviewWrap';
+  const prev = document.createElement('div');
+  prev.id = 'brushPreview';
+  prevWrap.appendChild(prev);
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.id = 'brushSize';
+  slider.min = 3; slider.max = 64; slider.value = brushSize;
+  slider.oninput = () => { brushSize = Number(slider.value); refreshTools(); };
+  brushRow.appendChild(prevWrap);
+  brushRow.appendChild(slider);
+  toolsEl.appendChild(brushRow);
+
   const d2 = document.createElement('div');
   d2.className = 'divider';
   toolsEl.appendChild(d2);
 
+  const toolRow = document.createElement('div');
+  toolRow.id = 'toolRow';
   const eraser = document.createElement('button');
   eraser.className = 'toolBtn';
   eraser.id = 'eraserBtn';
   eraser.textContent = '🧽';
   eraser.title = 'Eraser';
   eraser.onclick = () => { erasing = !erasing; refreshTools(); };
-  toolsEl.appendChild(eraser);
+  toolRow.appendChild(eraser);
 
   const undo = document.createElement('button');
   undo.className = 'toolBtn';
   undo.textContent = '↩️';
   undo.title = 'Undo';
   undo.onclick = doUndo;
-  toolsEl.appendChild(undo);
+  toolRow.appendChild(undo);
+  toolsEl.appendChild(toolRow);
 
   const trash = document.createElement('button');
   trash.className = 'toolBtn';
@@ -131,28 +262,24 @@ function buildTools() {
   trash.onclick = () => {
     if (!hasInk || confirm('Start over?')) clearPad();
   };
-  toolsEl.appendChild(trash);
+  toolRow.appendChild(trash);
 }
 
 function refreshTools() {
   for (const b of toolsEl.querySelectorAll('.swatch')) {
     b.classList.toggle('active', !erasing && b.dataset.color === color);
   }
-  for (const b of toolsEl.querySelectorAll('.sizeBtn')) {
-    b.classList.toggle('active', Number(b.dataset.size) === brushSize);
+  const prev = document.getElementById('brushPreview');
+  if (prev) {
+    const d = Math.max(6, Math.min(46, brushSize));
+    prev.style.width = d + 'px';
+    prev.style.height = d + 'px';
+    prev.style.background = erasing ? '#fff' : color;
   }
   document.getElementById('eraserBtn').classList.toggle('active', erasing);
 }
 
-// ---------- kind picker ----------
-for (const b of document.querySelectorAll('.kindBtn')) {
-  b.onclick = () => {
-    if (hasInk && !confirm('Switch animal? Your colouring starts over.')) return;
-    document.querySelectorAll('.kindBtn').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    setKind(b.dataset.kind);
-  };
-}
+// (the animal picker lives in the chooser gallery, built after templates load)
 
 // ---------- canvas ----------
 const inkCv = document.createElement('canvas');   // the child's strokes
@@ -529,6 +656,7 @@ sendBtn.addEventListener('click', () => {
       clearPad();
       nameInput.value = '';
       sendBtn.disabled = false;
+      showChooser(); // ready for the next child
     });
   } else {
     ovEmoji.textContent = KIND_EMOJI[kind];
