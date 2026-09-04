@@ -255,6 +255,9 @@ export class Animal {
   }
 
   // ---------- the arrival ----------
+  // One continuous story: the child's page rides the wind in through the
+  // trees, settles in the clearing, magic gathers around it, and the animal
+  // steps out of the burst. Timings in seconds from beginIntro.
   beginIntro(img) {
     const aspect = img.width / Math.max(1, img.height);
     const ph = Math.min(1.7, Math.max(1.0, this.s.height * 1.05));
@@ -265,42 +268,61 @@ export class Animal {
       map: tex, transparent: true, side: THREE.DoubleSide,
       depthWrite: false, fog: false,
     });
-    this.pagePlane = new THREE.Mesh(new THREE.PlaneGeometry(ph * aspect, ph), mat);
+    // segments along the width so the paper can flex like paper
+    const geo = new THREE.PlaneGeometry(ph * aspect, ph, 10, 1);
+    this.pageBase = Float32Array.from(geo.attributes.position.array);
+    this.pagePlane = new THREE.Mesh(geo, mat);
     this.pagePlane.renderOrder = 4;
     this.scene.add(this.pagePlane);
+
+    // the flight path: in from high among the trees, curving down to stage
+    const side = Math.random() < 0.5 ? -1 : 1;
+    this.flightFrom = new THREE.Vector3(side * rand(6, 8.5), rand(5.2, 6.2), rand(-8, -5));
+    this.flightMid = new THREE.Vector3(side * rand(2, 3.5), rand(3.2, 3.9), rand(-2, 0.5));
+    const gy = this.groundHeight(this.pos.x, this.pos.y);
+    this.flightTo = new THREE.Vector3(this.pos.x, gy + 1.3, this.pos.y);
+
+    this.glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: introTextures().glow, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: 0,
+    }));
+    this.glow.scale.set(0.1, 0.1, 1);
+    this.scene.add(this.glow);
+
+    this.orbiters = [];
+    this.trail = [];
+    this.sparks = null;
     this.body.object3D.visible = false;
     this.shadow.visible = false;
     this.introT = 0;
-    this.sparks = null;
+    window.dispatchEvent(new CustomEvent('creature-arrival', {
+      detail: { x: this.pos.x, z: this.pos.y, phase: 'flight' },
+    }));
   }
 
-  makeSparks(x, y, z) {
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(255,252,220,1)');
-    grad.addColorStop(0.4, 'rgba(255,236,160,0.6)');
-    grad.addColorStop(1, 'rgba(255,236,160,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    const tex = new THREE.CanvasTexture(c);
-    const group = [];
-    for (let i = 0; i < 22; i++) {
+  spawnDust(pos, tint, n, speed) {
+    const T = introTextures();
+    for (let i = 0; i < n; i++) {
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: tex, transparent: true, depthWrite: false,
-        blending: THREE.AdditiveBlending, opacity: 0.95,
+        map: tint === 'leaf' ? T.leaf : T.glow, transparent: true, depthWrite: false,
+        blending: tint === 'leaf' ? THREE.NormalBlending : THREE.AdditiveBlending,
+        opacity: rand(0.5, 0.95),
+        rotation: rand(0, TAU),
       }));
-      const sc = rand(0.08, 0.3);
+      const sc = tint === 'leaf' ? rand(0.09, 0.17) : rand(0.05, 0.2);
       sp.scale.set(sc, sc, 1);
-      sp.position.set(x, y, z);
+      sp.position.copy(pos);
+      sp.position.x += rand(-0.15, 0.15);
+      sp.position.y += rand(-0.15, 0.15);
+      sp.position.z += rand(-0.15, 0.15);
       const a = rand(0, TAU);
       sp.userData.vel = new THREE.Vector3(
-        Math.cos(a) * rand(0.4, 1.6), rand(0.8, 2.6), Math.sin(a) * rand(0.4, 1.6));
+        Math.cos(a) * rand(0.1, 1) * speed, rand(0.2, 1.2) * speed, Math.sin(a) * rand(0.1, 1) * speed);
+      sp.userData.fade = rand(0.6, 1.3);
+      sp.userData.spin = rand(-3, 3);
+      this.trail.push(sp);
       this.scene.add(sp);
-      group.push(sp);
     }
-    return group;
   }
 
   updateIntro(dt, t) {
@@ -309,56 +331,131 @@ export class Animal {
     const gy = this.groundHeight(this.pos.x, this.pos.y);
     const o = this.body.object3D;
     o.position.set(this.pos.x, o.position.y, this.pos.y);
+    const P = this.pagePlane;
 
-    // the page drifts down, rocking gently, showing itself off
-    if (this.pagePlane) {
-      const drop = clamp(T / 1.7, 0, 1);
-      const e = 1 - (1 - drop) * (1 - drop); // ease out
-      this.pagePlane.position.set(
-        this.pos.x,
-        gy + 3.2 - e * 2.0 + Math.sin(t * 2.2) * 0.03,
-        this.pos.y);
-      this.pagePlane.rotation.y = Math.sin(T * 1.5) * 0.4;
-      this.pagePlane.rotation.z = Math.sin(T * 1.9 + 1) * 0.06;
+    // ---- phase 1: riding the wind in through the trees (0 .. 2.6) ----
+    if (P && T < 2.6) {
+      const k = clamp(T / 2.6, 0, 1);
+      const e = k * k * (3 - 2 * k); // smoothstep: accelerate, then settle
+      const a2 = this.flightFrom, b2 = this.flightMid, c2 = this.flightTo;
+      const q = 1 - e;
+      P.position.set(
+        q * q * a2.x + 2 * q * e * b2.x + e * e * c2.x + Math.sin(T * 3.1) * 0.12 * (1 - e),
+        q * q * a2.y + 2 * q * e * b2.y + e * e * c2.y + Math.sin(T * 4.3) * 0.08 * (1 - e),
+        q * q * a2.z + 2 * q * e * b2.z + e * e * c2.z);
+      // bank into the turn, flutter in the wind
+      P.rotation.z = Math.sin(T * 2.6) * 0.18 * (1 - e * 0.6);
+      P.rotation.y = Math.sin(T * 1.7) * 0.5 * (1 - e * 0.5);
+      P.rotation.x = Math.sin(T * 3.7) * 0.12;
+      if ((this.lastDust || 0) < T - 0.05) {
+        this.lastDust = T;
+        this.spawnDust(P.position, 'glow', 1, 0.25);
+      }
     }
 
-    // the burst: page becomes sparkles, sparkles become the animal
-    if (T >= 1.7 && !this.sparks) {
-      this.sparks = this.makeSparks(this.pos.x, gy + 1.2, this.pos.y);
+    // ---- phase 2: hover in the clearing while the magic gathers (2.6 .. 4.8) ----
+    if (P && T >= 2.6 && T < 4.8) {
+      const g = clamp((T - 2.6) / 2.2, 0, 1); // how gathered the magic is
+      P.position.set(
+        this.flightTo.x + Math.sin(t * 1.3) * 0.05,
+        this.flightTo.y + Math.sin(t * 2.1) * 0.06 + g * 0.15,
+        this.flightTo.z);
+      P.rotation.set(Math.sin(t * 1.1) * 0.05, Math.sin(t * 0.8) * 0.22, Math.sin(t * 1.4) * 0.04);
+
+      // paper flexes as energy takes hold
+      const posA = P.geometry.attributes.position;
+      const bend = 0.06 + g * 0.16;
+      for (let i = 0; i < posA.count; i++) {
+        const bx = this.pageBase[i * 3];
+        posA.setZ(i, Math.sin(bx * 4.2 + t * 6) * bend * Math.abs(bx));
+      }
+      posA.needsUpdate = true;
+
+      // lights begin to orbit, spiralling tighter
+      if (this.orbiters.length < 16 && Math.random() < g * 0.5) {
+        const TX = introTextures();
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: TX.glow, transparent: true, depthWrite: false,
+          blending: THREE.AdditiveBlending, opacity: 0.9,
+          color: Math.random() < 0.5 ? 0xffe9a8 : 0xc0ffc8,
+        }));
+        const sc = rand(0.08, 0.18);
+        sp.scale.set(sc, sc, 1);
+        sp.userData.orbit = { a: rand(0, TAU), sp: rand(1.6, 3.2), r: rand(0.9, 1.3), y: rand(-0.4, 0.5) };
+        this.orbiters.push(sp);
+        this.scene.add(sp);
+      }
+      for (const sp of this.orbiters) {
+        const ob = sp.userData.orbit;
+        ob.a += dt * ob.sp * (1 + g);
+        const r = ob.r * (1 - g * 0.7);
+        sp.position.set(
+          P.position.x + Math.cos(ob.a) * r,
+          P.position.y + ob.y * (1 - g * 0.5) + Math.sin(ob.a * 2) * 0.08,
+          P.position.z + Math.sin(ob.a) * r);
+      }
+
+      // the glow within
+      this.glow.position.copy(P.position);
+      const gs = 0.3 + g * 1.6 + Math.sin(t * 7) * 0.08 * g;
+      this.glow.scale.set(gs, gs, 1);
+      this.glow.material.opacity = g * 0.55;
     }
-    if (this.pagePlane && T >= 1.7) {
-      const k = clamp((T - 1.7) / 0.4, 0, 1);
+
+    // ---- phase 3: the burst (4.8) ----
+    if (T >= 4.8 && !this.sparks) {
+      this.sparks = true;
+      this.spawnDust(this.flightTo, 'glow', 26, 1.6);
+      this.spawnDust(this.flightTo, 'leaf', 10, 1.1);
+      for (const sp of this.orbiters) { this.scene.remove(sp); sp.material.dispose(); }
+      this.orbiters = [];
+      window.dispatchEvent(new CustomEvent('creature-arrival', {
+        detail: { x: this.pos.x, z: this.pos.y, phase: 'burst' },
+      }));
+    }
+    if (P && T >= 4.8) {
+      const k = clamp((T - 4.8) / 0.4, 0, 1);
       const sc = 1 - k * 0.96;
-      this.pagePlane.scale.set(sc, sc, sc);
-      this.pagePlane.material.opacity = 1 - k;
+      P.scale.set(sc, sc, sc);
+      P.material.opacity = 1 - k;
+      this.glow.material.opacity = (1 - k) * 0.8;
+      const ggs = 1.9 + k * 1.4;
+      this.glow.scale.set(ggs, ggs, 1);
       if (k >= 1) {
-        this.scene.remove(this.pagePlane);
-        this.pagePlane.geometry.dispose();
-        this.pagePlane.material.map.dispose();
-        this.pagePlane.material.dispose();
+        this.scene.remove(P);
+        P.geometry.dispose();
+        P.material.map.dispose();
+        P.material.dispose();
         this.pagePlane = null;
-      }
-    }
-    if (this.sparks) {
-      for (const sp of this.sparks) {
-        sp.position.addScaledVector(sp.userData.vel, dt);
-        sp.userData.vel.y -= 2.2 * dt;
-        sp.material.opacity -= dt * 0.9;
-      }
-      if (T > 3.0) {
-        for (const sp of this.sparks) {
-          this.scene.remove(sp);
-          sp.material.dispose();
-        }
-        this.sparks = null;
+        this.scene.remove(this.glow);
+        this.glow.material.dispose();
+        this.glow = null;
       }
     }
 
-    // the animal grows out of the burst
-    if (T >= 1.85) {
-      if (!o.visible) { o.visible = true; this.shadow.visible = true; }
-      const k = clamp((T - 1.85) / 0.75, 0, 1);
-      const back = 1 + 0.12 * Math.sin(k * Math.PI); // a small proud puff
+    // dust and leaves drift and fade throughout
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      const sp = this.trail[i];
+      sp.position.addScaledVector(sp.userData.vel, dt);
+      sp.userData.vel.y -= 1.4 * dt;
+      sp.material.rotation += sp.userData.spin * dt;
+      sp.material.opacity -= dt / sp.userData.fade;
+      if (sp.material.opacity <= 0) {
+        this.scene.remove(sp);
+        sp.material.dispose();
+        this.trail.splice(i, 1);
+      }
+    }
+
+    // ---- phase 4: the animal grows out of the light (4.95 ..) ----
+    if (T >= 4.95) {
+      if (!o.visible) {
+        o.visible = true;
+        this.shadow.visible = true;
+        if (this.body.celebrate) this.body.celebrate();
+      }
+      const k = clamp((T - 4.95) / 0.8, 0, 1);
+      const back = 1 + 0.12 * Math.sin(k * Math.PI);
       o.scale.setScalar((0.5 + 0.5 * k) * back);
       this.body.update(dt, {
         state: 'look', speed: 0, moving: false,
@@ -367,7 +464,7 @@ export class Animal {
       this.shadow.position.set(this.pos.x, gy + 0.03, this.pos.y);
     }
 
-    if (T >= 3.1) {
+    if (T >= 6.3 && this.trail.length === 0) {
       o.scale.setScalar(1);
       this.introT = -1;
       this.enterState('look'); // it looks around at its new world first
@@ -641,6 +738,39 @@ export class AnimalManager {
 }
 
 // soft elliptical blob, darkest at the middle
+let _introTex = null;
+function introTextures() {
+  if (_introTex) return _introTex;
+  const glowC = document.createElement('canvas');
+  glowC.width = glowC.height = 64;
+  const g = glowC.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,250,222,1)');
+  grad.addColorStop(0.4, 'rgba(255,236,170,0.65)');
+  grad.addColorStop(1, 'rgba(255,236,170,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const leafC = document.createElement('canvas');
+  leafC.width = leafC.height = 64;
+  const lg = leafC.getContext('2d');
+  lg.translate(32, 32);
+  lg.rotate(0.6);
+  const lgrad = lg.createLinearGradient(-20, 0, 20, 0);
+  lgrad.addColorStop(0, '#4f9a55');
+  lgrad.addColorStop(1, '#8fbe5e');
+  lg.fillStyle = lgrad;
+  lg.beginPath();
+  lg.ellipse(0, 0, 22, 10, 0, 0, Math.PI * 2);
+  lg.fill();
+  const mk = (c) => {
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  _introTex = { glow: mk(glowC), leaf: mk(leafC) };
+  return _introTex;
+}
+
 function contactShadowTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 128;

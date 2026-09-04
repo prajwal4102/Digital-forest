@@ -391,6 +391,11 @@ export class ModelBody {
     this.current = a;
   }
 
+  // a joyful reaction on arrival: whatever this pack has that reads happy
+  celebrate() {
+    this.play(this.resolve(['Yes', 'Wave', 'Dance', 'Jump', 'Idle_2']), true);
+  }
+
   // which clip suits the mood — resolved against whatever this pack offers
   baseFor(state, moving, fast) {
     if (moving) {

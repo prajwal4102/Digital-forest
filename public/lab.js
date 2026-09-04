@@ -2097,6 +2097,22 @@ function addDrawing(data, live) {
   connect();
 }
 
+// ---- the forest notices an arrival ----
+// While a page transforms on stage the camera leans in a little, and the
+// burst sends a gust through every leaf. Subtle on purpose: this plays on a
+// large wall, and a lurching camera would be worse than none.
+const arrival = { active: false, t0: 0, x: 0, z: 0, gust: 0 };
+window.addEventListener('creature-arrival', (e) => {
+  if (e.detail.phase === 'flight') {
+    arrival.active = true;
+    arrival.t0 = clock.elapsedTime;
+    arrival.x = e.detail.x;
+    arrival.z = e.detail.z;
+  } else if (e.detail.phase === 'burst') {
+    arrival.gust = 1.4;
+  }
+});
+
 // console handle for tuning at the event, and a grey stand-in for testing
 // the navigation without needing a drawing: /lab#proxy
 window.forest = {
@@ -2167,7 +2183,20 @@ function frame() {
   // slow, gentle camera breathing
   camera.position.x = Math.sin(t * 0.06) * 0.1; // barely-there sway, no perceptible drift
   camera.position.y = 1.7 + Math.sin(t * 0.07) * 0.08;
-  camera.lookAt(0, 2.6, -20);
+  let lookX = 0, lookY = 2.6;
+  camera.position.z = 12.5;
+  if (arrival.active) {
+    const at = t - arrival.t0;
+    // ease in over the flight, hold through the magic, ease out after
+    const inK = clamp(at / 2.2, 0, 1);
+    const outK = clamp((at - 6.8) / 1.8, 0, 1);
+    const k = inK * inK * (3 - 2 * inK) * (1 - outK * outK * (3 - 2 * outK));
+    camera.position.z = 12.5 - 1.15 * k;
+    lookX = arrival.x * 0.3 * k;
+    lookY = 2.6 - 0.55 * k;
+    if (at > 9) arrival.active = false;
+  }
+  camera.lookAt(lookX, lookY, -20);
 
   // mist drifts sideways, barely
   for (const m of mists) {
@@ -2180,9 +2209,10 @@ function frame() {
     if (cl.position.x > 90) cl.position.x = -90;
   }
 
-  // wind gusts rise and fall
+  // wind gusts rise and fall — and surge when magic bursts in the clearing
   WIND.time.value = t;
-  WIND.gust.value = 0.75 + Math.sin(t * 0.23) * 0.22 + Math.sin(t * 0.9) * 0.1;
+  arrival.gust = Math.max(0, arrival.gust - dt * 0.8);
+  WIND.gust.value = 0.75 + Math.sin(t * 0.23) * 0.22 + Math.sin(t * 0.9) * 0.1 + arrival.gust;
 
   // mid-distance trees breathe in the breeze
   for (const tr of midTrees) {

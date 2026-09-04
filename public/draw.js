@@ -189,9 +189,12 @@ function resizePad() {
 
 // paint the visible pad: strokes (clipped to the animal) with the template
 // lines on top, where they can never be painted over
+let paperFlying = false; // while the page rides the wind, the pad is empty
+
 function composite() {
   const r = wrap.getBoundingClientRect();
   ctx.clearRect(0, 0, r.width, r.height);
+  if (paperFlying) return; // the paper has left the pad
   if (!tpl || !tplRect) {
     ctx.drawImage(inkCv, 0, 0, r.width, r.height);
     return;
@@ -356,6 +359,125 @@ function connect() {
   ws.onerror = () => ws.close();
 }
 
+// ---------- the paper flies away ----------
+// The exact page the child coloured lifts off the pad, sparkles swirl round
+// it, the room dims, and the wind carries it off the top of the screen -
+// where the jungle wall picks up the same paper flying in. One story.
+function flyAwayPaper(done) {
+  if (!tpl || !tplRect) { done(); return; }
+  const padR = pad.getBoundingClientRect();
+  const dpr = pad.width / padR.width;
+
+  // snapshot the visible page exactly as the child sees it
+  const snap = document.createElement('canvas');
+  snap.width = Math.round(tplRect.w * dpr);
+  snap.height = Math.round(tplRect.h * dpr);
+  snap.getContext('2d').drawImage(pad,
+    tplRect.x * dpr, tplRect.y * dpr, tplRect.w * dpr, tplRect.h * dpr,
+    0, 0, snap.width, snap.height);
+
+  // the dimming of the room
+  const dim = document.createElement('div');
+  dim.style.cssText = 'position:fixed;inset:0;background:rgba(3,24,15,0);' +
+    'transition:background 0.7s ease;z-index:40;pointer-events:none;';
+  document.body.appendChild(dim);
+
+  // the paper itself
+  const paper = document.createElement('img');
+  paper.src = snap.toDataURL('image/png');
+  const x0 = padR.left + tplRect.x, y0 = padR.top + tplRect.y;
+  paper.style.cssText = 'position:fixed;left:' + x0 + 'px;top:' + y0 + 'px;' +
+    'width:' + tplRect.w + 'px;height:' + tplRect.h + 'px;z-index:42;' +
+    'pointer-events:none;will-change:transform;' +
+    'filter:drop-shadow(0 6px 14px rgba(0,20,10,0.35));';
+  document.body.appendChild(paper);
+
+  // the sparkles
+  const fx = document.createElement('canvas');
+  fx.width = window.innerWidth;
+  fx.height = window.innerHeight;
+  fx.style.cssText = 'position:fixed;inset:0;z-index:43;pointer-events:none;';
+  document.body.appendChild(fx);
+  const fg = fx.getContext('2d');
+  const motes = [];
+
+  // the pad goes empty the instant the paper lifts: the page LEFT
+  paperFlying = true;
+  composite();
+
+  const W = window.innerWidth, HH = window.innerHeight;
+  const cx0 = x0 + tplRect.w / 2, cy0 = y0 + tplRect.h / 2;
+  const DUR = 3.2;
+  let start = null;
+  requestAnimationFrame(function tick(now) {
+    if (!start) start = now;
+    const T = (now - start) / 1000;
+
+    // paper motion: lift and rock (0..1.1), then ride the wind away
+    let px = cx0, py = cy0, rot = 0, sc = 1;
+    if (T < 1.1) {
+      const k = T / 1.1;
+      py = cy0 - 26 * k * k + Math.sin(T * 9) * 2.2 * k;
+      px = cx0 + Math.sin(T * 5) * 3 * k;
+      rot = Math.sin(T * 6.5) * 2.4 * k;
+      sc = 1 + 0.045 * k;
+      dim.style.background = 'rgba(3,24,15,0.42)';
+    } else {
+      const k = Math.min(1, (T - 1.1) / 1.7);
+      const e = k * k; // the wind builds
+      px = cx0 + (W * 0.62) * e + Math.sin(T * 4) * 8 * (1 - e);
+      py = cy0 - 26 - (HH * 0.85) * e + Math.sin(T * 5) * 6 * (1 - e);
+      rot = 2.4 + 20 * e;
+      sc = 1.045 - 0.5 * e;
+    }
+    paper.style.transform = 'translate(' + (px - cx0) + 'px,' + (py - cy0) + 'px) ' +
+      'rotate(' + rot + 'deg) scale(' + sc + ')';
+
+    // sparkles born at the paper's edges, dust left along its path
+    if (T < 2.6) {
+      for (let i = 0; i < (T < 1.1 ? 2 : 4); i++) {
+        const a = Math.random() * Math.PI * 2;
+        motes.push({
+          x: px + Math.cos(a) * tplRect.w * 0.5 * sc,
+          y: py + Math.sin(a) * tplRect.h * 0.5 * sc,
+          vx: (Math.random() - 0.5) * 40 - (T > 1.1 ? 60 : 0),
+          vy: -20 - Math.random() * 50,
+          r: 1.5 + Math.random() * 3,
+          life: 1,
+        });
+      }
+    }
+    fg.clearRect(0, 0, W, HH);
+    for (let i = motes.length - 1; i >= 0; i--) {
+      const m2 = motes[i];
+      m2.x += m2.vx / 60;
+      m2.y += m2.vy / 60;
+      m2.life -= 1 / 80;
+      if (m2.life <= 0) { motes.splice(i, 1); continue; }
+      fg.globalAlpha = m2.life;
+      const grad = fg.createRadialGradient(m2.x, m2.y, 0, m2.x, m2.y, m2.r * 3);
+      grad.addColorStop(0, 'rgba(255,244,190,0.95)');
+      grad.addColorStop(1, 'rgba(255,244,190,0)');
+      fg.fillStyle = grad;
+      fg.beginPath();
+      fg.arc(m2.x, m2.y, m2.r * 3, 0, Math.PI * 2);
+      fg.fill();
+    }
+    fg.globalAlpha = 1;
+
+    if (T < DUR || motes.length) {
+      if (T > 2.7) dim.style.background = 'rgba(3,24,15,0)';
+      requestAnimationFrame(tick);
+    } else {
+      paper.remove();
+      fx.remove();
+      dim.remove();
+      paperFlying = false;
+      done();
+    }
+  });
+}
+
 // ---------- send ----------
 const KIND_EMOJI = {
   prowler: '🦊', stomper: '🐂', hopper: '🐰', slitherer: '🐍',
@@ -387,14 +509,22 @@ sendBtn.addEventListener('click', () => {
     mode: tpl && tplRect ? 'color' : 'draw',
     img,
   }));
-  ovEmoji.textContent = KIND_EMOJI[kind];
-  overlay.classList.add('show');
-  setTimeout(() => {
-    overlay.classList.remove('show');
-    clearPad();
-    nameInput.value = '';
-    sendBtn.disabled = false;
-  }, 2600);
+  if (tpl && tplRect) {
+    flyAwayPaper(() => {
+      clearPad();
+      nameInput.value = '';
+      sendBtn.disabled = false;
+    });
+  } else {
+    ovEmoji.textContent = KIND_EMOJI[kind];
+    overlay.classList.add('show');
+    setTimeout(() => {
+      overlay.classList.remove('show');
+      clearPad();
+      nameInput.value = '';
+      sendBtn.disabled = false;
+    }, 2600);
+  }
 });
 
 // block iOS gestures interfering with drawing
