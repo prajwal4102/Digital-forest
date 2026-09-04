@@ -111,6 +111,12 @@ export function skinMaterial(prep, box, split, hip) {
 // feather shading show through the child's colours instead of being
 // flattened into balloons.
 export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTex = null) {
+  if (keepDetail) {
+    // the child's colour is matte crayon, never metal - metalness with no
+    // envmap is a black mirror, and it was eating dark colours whole
+    mat.metalness = 0;
+    mat.roughness = Math.max(0.8, mat.roughness || 0.8);
+  }
   const u = {
     uDraw: { value: prep.tex },
     uMin: { value: box.min.clone() },
@@ -194,12 +200,19 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTe
           // the original texture keeps working as light-and-shade under the
           // child's colour: fur stays fur, feathers stay feathers
           float dLum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          // The shader sees LINEAR light, where dark colours crowd near zero:
+          // charcoal fur (sRGB 0.16) lands at 0.023 linear, right next to a
+          // truly black eye. Judge darkness perceptually or a dark-coated
+          // animal gets "protected" whole and rejects the child's colour.
+          float dL = pow(max(dLum, 0.0), 0.4545);
           // What the artist made near-black STAYS black - eyes, nose,
           // nostrils, dark ear interiors - whatever the child colours.
-          // Kids may not pick black, but the animal still needs its eyes.
-          float darkKeep = 1.0 - smoothstep(0.03, 0.095, dLum);
-          gDrawCol = col * (0.5 + dLum * 0.6) * (1.0 - darkKeep);
-          diffuseColor.rgb = mix(col * (0.42 + dLum * 0.85),
+          float darkKeep = 1.0 - smoothstep(0.10, 0.22, dL);
+          // the original acts as gentle shading around identity: a mid-tone
+          // changes nothing, so the child's colour stays THEIR colour
+          float shade = clamp(0.74 + dL * 0.52, 0.74, 1.16);
+          gDrawCol = col * shade * (1.0 - darkKeep);
+          diffuseColor.rgb = mix(col * shade,
                                  diffuseColor.rgb * 0.85, darkKeep);
           ` : `
           gDrawCol = col;
@@ -208,7 +221,7 @@ export function skinify(mat, prep, box, split, hip, keepDetail = false, detailTe
         }
       `)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += gDrawCol * ${keepDetail ? '0.17' : '0.3'};`);
+        totalEmissiveRadiance += gDrawCol * ${keepDetail ? '0.22' : '0.3'};`);
   };
   return mat;
 }
