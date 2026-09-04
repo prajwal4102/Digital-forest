@@ -333,73 +333,86 @@ export class Animal {
     o.position.set(this.pos.x, o.position.y, this.pos.y);
     const P = this.pagePlane;
 
-    // ---- phase 1: riding the wind in through the trees (0 .. 2.6) ----
-    if (P && T < 2.6) {
-      const k = clamp(T / 2.6, 0, 1);
-      const e = k * k * (3 - 2 * k); // smoothstep: accelerate, then settle
-      const a2 = this.flightFrom, b2 = this.flightMid, c2 = this.flightTo;
+    // ---- phases 1+2 as ONE continuous motion ----
+    // The flight eases into the hover through a half-second crossfade, and
+    // every hover wobble starts at its zero-crossing, so there is no seam.
+    const FLY_END = 2.6;
+    if (P && T < 4.8) {
+      const k = clamp(T / FLY_END, 0, 1);
+      const e = k * k * k * (k * (k * 6 - 15) + 10); // smootherstep
       const q = 1 - e;
-      P.position.set(
-        q * q * a2.x + 2 * q * e * b2.x + e * e * c2.x + Math.sin(T * 3.1) * 0.12 * (1 - e),
-        q * q * a2.y + 2 * q * e * b2.y + e * e * c2.y + Math.sin(T * 4.3) * 0.08 * (1 - e),
-        q * q * a2.z + 2 * q * e * b2.z + e * e * c2.z);
-      // bank into the turn, flutter in the wind
-      P.rotation.z = Math.sin(T * 2.6) * 0.18 * (1 - e * 0.6);
-      P.rotation.y = Math.sin(T * 1.7) * 0.5 * (1 - e * 0.5);
-      P.rotation.x = Math.sin(T * 3.7) * 0.12;
-      if ((this.lastDust || 0) < T - 0.05) {
+      const a2 = this.flightFrom, b2 = this.flightMid, c2 = this.flightTo;
+      const wob = (1 - e) * (1 - e);
+      const fx = q * q * a2.x + 2 * q * e * b2.x + e * e * c2.x + Math.sin(T * 2.3) * 0.1 * wob;
+      const fy = q * q * a2.y + 2 * q * e * b2.y + e * e * c2.y + Math.sin(T * 3.1) * 0.07 * wob;
+      const fz = q * q * a2.z + 2 * q * e * b2.z + e * e * c2.z;
+
+      const hT = Math.max(0, T - FLY_END);
+      const g = clamp(hT / 2.2, 0, 1);
+      const hx = this.flightTo.x + Math.sin(hT * 1.3) * 0.05;
+      const hy = this.flightTo.y + Math.sin(hT * 2.0) * 0.06 + g * g * 0.15;
+      const hz = this.flightTo.z;
+
+      const mixK = clamp((T - (FLY_END - 0.5)) / 0.5, 0, 1);
+      const mix = mixK * mixK * (3 - 2 * mixK);
+      P.position.set(fx + (hx - fx) * mix, fy + (hy - fy) * mix, fz + (hz - fz) * mix);
+
+      // banking in flight eases into a gentle hover sway
+      const frz = Math.sin(T * 2.1) * 0.15 * (1 - e * 0.6);
+      const fry = Math.sin(T * 1.5) * 0.42 * (1 - e * 0.5);
+      const frx = Math.sin(T * 2.9) * 0.1 * (1 - e * 0.4);
+      const hrz = Math.sin(hT * 1.4) * 0.04;
+      const hry = Math.sin(hT * 0.8) * 0.2;
+      const hrx = Math.sin(hT * 1.1) * 0.05;
+      P.rotation.set(frx + (hrx - frx) * mix, fry + (hry - fry) * mix, frz + (hrz - frz) * mix);
+
+      // dust on the way in
+      if (T < FLY_END && (this.lastDust || 0) < T - 0.07) {
         this.lastDust = T;
-        this.spawnDust(P.position, 'glow', 1, 0.25);
-      }
-    }
-
-    // ---- phase 2: hover in the clearing while the magic gathers (2.6 .. 4.8) ----
-    if (P && T >= 2.6 && T < 4.8) {
-      const g = clamp((T - 2.6) / 2.2, 0, 1); // how gathered the magic is
-      P.position.set(
-        this.flightTo.x + Math.sin(t * 1.3) * 0.05,
-        this.flightTo.y + Math.sin(t * 2.1) * 0.06 + g * 0.15,
-        this.flightTo.z);
-      P.rotation.set(Math.sin(t * 1.1) * 0.05, Math.sin(t * 0.8) * 0.22, Math.sin(t * 1.4) * 0.04);
-
-      // paper flexes as energy takes hold
-      const posA = P.geometry.attributes.position;
-      const bend = 0.06 + g * 0.16;
-      for (let i = 0; i < posA.count; i++) {
-        const bx = this.pageBase[i * 3];
-        posA.setZ(i, Math.sin(bx * 4.2 + t * 6) * bend * Math.abs(bx));
-      }
-      posA.needsUpdate = true;
-
-      // lights begin to orbit, spiralling tighter
-      if (this.orbiters.length < 16 && Math.random() < g * 0.5) {
-        const TX = introTextures();
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: TX.glow, transparent: true, depthWrite: false,
-          blending: THREE.AdditiveBlending, opacity: 0.9,
-          color: Math.random() < 0.5 ? 0xffe9a8 : 0xc0ffc8,
-        }));
-        const sc = rand(0.08, 0.18);
-        sp.scale.set(sc, sc, 1);
-        sp.userData.orbit = { a: rand(0, TAU), sp: rand(1.6, 3.2), r: rand(0.9, 1.3), y: rand(-0.4, 0.5) };
-        this.orbiters.push(sp);
-        this.scene.add(sp);
-      }
-      for (const sp of this.orbiters) {
-        const ob = sp.userData.orbit;
-        ob.a += dt * ob.sp * (1 + g);
-        const r = ob.r * (1 - g * 0.7);
-        sp.position.set(
-          P.position.x + Math.cos(ob.a) * r,
-          P.position.y + ob.y * (1 - g * 0.5) + Math.sin(ob.a * 2) * 0.08,
-          P.position.z + Math.sin(ob.a) * r);
+        this.spawnDust(P.position, 'glow', 1, 0.2);
       }
 
-      // the glow within
-      this.glow.position.copy(P.position);
-      const gs = 0.3 + g * 1.6 + Math.sin(t * 7) * 0.08 * g;
-      this.glow.scale.set(gs, gs, 1);
-      this.glow.material.opacity = g * 0.55;
+      // once hovering, the magic gathers
+      if (hT > 0) {
+        // paper flexes as energy takes hold - amplitude fades in with the mix
+        const posA = P.geometry.attributes.position;
+        const bend = (0.05 + g * 0.15) * mix;
+        for (let i = 0; i < posA.count; i++) {
+          const bx = this.pageBase[i * 3];
+          posA.setZ(i, Math.sin(bx * 4.2 + T * 5) * bend * Math.abs(bx));
+        }
+        posA.needsUpdate = true;
+
+        if (this.orbiters.length < 16 && Math.random() < g * 0.5) {
+          const TX = introTextures();
+          const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: TX.glow, transparent: true, depthWrite: false,
+            blending: THREE.AdditiveBlending, opacity: 0,
+            color: Math.random() < 0.5 ? 0xffe9a8 : 0xc0ffc8,
+          }));
+          const sc = rand(0.08, 0.18);
+          sp.scale.set(sc, sc, 1);
+          sp.userData.orbit = { a: rand(0, TAU), sp: rand(1.4, 2.6), r: rand(0.9, 1.3), y: rand(-0.4, 0.5), born: T };
+          this.orbiters.push(sp);
+          this.scene.add(sp);
+        }
+        for (const sp of this.orbiters) {
+          const ob = sp.userData.orbit;
+          ob.a += dt * ob.sp * (1 + g * 0.8);
+          const r = ob.r * (1 - g * 0.68);
+          sp.position.set(
+            P.position.x + Math.cos(ob.a) * r,
+            P.position.y + ob.y * (1 - g * 0.5) + Math.sin(ob.a * 2) * 0.07,
+            P.position.z + Math.sin(ob.a) * r);
+          // each light breathes in softly instead of popping
+          sp.material.opacity = Math.min(0.9, sp.material.opacity + dt * 1.6);
+        }
+
+        this.glow.position.copy(P.position);
+        const gs = 0.3 + g * g * 1.6 + Math.sin(T * 6) * 0.06 * g;
+        this.glow.scale.set(gs, gs, 1);
+        this.glow.material.opacity = g * g * 0.55;
+      }
     }
 
     // ---- phase 3: the burst (4.8) ----
@@ -414,7 +427,8 @@ export class Animal {
       }));
     }
     if (P && T >= 4.8) {
-      const k = clamp((T - 4.8) / 0.4, 0, 1);
+      const kr = clamp((T - 4.8) / 0.45, 0, 1);
+      const k = kr * kr * (3 - 2 * kr);
       const sc = 1 - k * 0.96;
       P.scale.set(sc, sc, sc);
       P.material.opacity = 1 - k;
@@ -454,8 +468,9 @@ export class Animal {
         this.shadow.visible = true;
         if (this.body.celebrate) this.body.celebrate();
       }
-      const k = clamp((T - 4.95) / 0.8, 0, 1);
-      const back = 1 + 0.12 * Math.sin(k * Math.PI);
+      const kr = clamp((T - 4.95) / 0.9, 0, 1);
+      const k = kr * kr * kr * (kr * (kr * 6 - 15) + 10); // smootherstep
+      const back = 1 + 0.08 * Math.sin(k * Math.PI);
       o.scale.setScalar((0.5 + 0.5 * k) * back);
       this.body.update(dt, {
         state: 'look', speed: 0, moving: false,

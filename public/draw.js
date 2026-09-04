@@ -407,41 +407,56 @@ function flyAwayPaper(done) {
 
   const W = window.innerWidth, HH = window.innerHeight;
   const cx0 = x0 + tplRect.w / 2, cy0 = y0 + tplRect.h / 2;
-  const DUR = 3.2;
-  let start = null;
+  const DUR = 3.1;
+  const sstep = (v) => { v = Math.max(0, Math.min(1, v)); return v * v * v * (v * (v * 6 - 15) + 10); };
+
+  // one continuous path: levitate, then a single bezier ride off-screen.
+  // Rotation follows velocity like a real sheet of paper, smoothed.
+  const P1 = { x: cx0 + W * 0.1, y: cy0 - HH * 0.3 };
+  const P2 = { x: cx0 + W * 0.7, y: cy0 - HH * 1.05 };
+  let last = null;
+  let lastX = cx0, lastY = cy0, rotCur = 0;
   requestAnimationFrame(function tick(now) {
-    if (!start) start = now;
-    const T = (now - start) / 1000;
+    if (!last) last = now;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    const T = (now - start_) / 1000;
 
-    // paper motion: lift and rock (0..1.1), then ride the wind away
-    let px = cx0, py = cy0, rot = 0, sc = 1;
-    if (T < 1.1) {
-      const k = T / 1.1;
-      py = cy0 - 26 * k * k + Math.sin(T * 9) * 2.2 * k;
-      px = cx0 + Math.sin(T * 5) * 3 * k;
-      rot = Math.sin(T * 6.5) * 2.4 * k;
-      sc = 1 + 0.045 * k;
-      dim.style.background = 'rgba(3,24,15,0.42)';
-    } else {
-      const k = Math.min(1, (T - 1.1) / 1.7);
-      const e = k * k; // the wind builds
-      px = cx0 + (W * 0.62) * e + Math.sin(T * 4) * 8 * (1 - e);
-      py = cy0 - 26 - (HH * 0.85) * e + Math.sin(T * 5) * 6 * (1 - e);
-      rot = 2.4 + 20 * e;
-      sc = 1.045 - 0.5 * e;
-    }
-    paper.style.transform = 'translate(' + (px - cx0) + 'px,' + (py - cy0) + 'px) ' +
-      'rotate(' + rot + 'deg) scale(' + sc + ')';
+    // levitation eases in and simply persists; the wind ride eases in later,
+    // so the two overlap instead of switching
+    const lift = sstep(T / 0.95) * 26;
+    const u = sstep((T - 0.7) / 2.0);
+    const wobAmp = sstep(T / 0.5) * (1 - u);
+    const q = 1 - u;
+    const px = q * q * cx0 + 2 * q * u * P1.x + u * u * P2.x + Math.sin(T * 2.4) * 5 * wobAmp;
+    const py = q * q * cy0 + 2 * q * u * P1.y + u * u * P2.y - lift
+      + Math.sin(T * 3.1) * 3.5 * wobAmp;
 
-    // sparkles born at the paper's edges, dust left along its path
-    if (T < 2.6) {
-      for (let i = 0; i < (T < 1.1 ? 2 : 4); i++) {
+    // bank into the motion, gently
+    const vx = (px - lastX) / Math.max(dt, 1e-3);
+    lastX = px; lastY = py;
+    const rotTarget = Math.max(-16, Math.min(16, vx * 0.012)) + Math.sin(T * 2.0) * 1.6 * wobAmp;
+    rotCur += (rotTarget - rotCur) * Math.min(1, dt * 5);
+    const sc = 1 + 0.05 * sstep(T / 0.95) - 0.55 * u;
+
+    paper.style.transform = 'translate3d(' + (px - cx0) + 'px,' + (py - cy0) + 'px,0) ' +
+      'rotate(' + rotCur + 'deg) scale(' + sc + ')';
+
+    // the room dims while the magic is closest, and breathes back
+    const dimK = sstep(T / 0.7) * (1 - sstep((T - 2.2) / 0.8));
+    dim.style.background = 'rgba(3,24,15,' + (0.42 * dimK).toFixed(3) + ')';
+
+    // sparkles born at the paper's edges - real-dt so every screen agrees
+    if (T < 2.5) {
+      const born = (T < 0.9 ? 90 : 200) * dt;
+      for (let i = 0; i < born || Math.random() < born % 1; i++) {
+        if (i >= Math.floor(born) && Math.random() > born % 1) break;
         const a = Math.random() * Math.PI * 2;
         motes.push({
           x: px + Math.cos(a) * tplRect.w * 0.5 * sc,
           y: py + Math.sin(a) * tplRect.h * 0.5 * sc,
-          vx: (Math.random() - 0.5) * 40 - (T > 1.1 ? 60 : 0),
-          vy: -20 - Math.random() * 50,
+          vx: (Math.random() - 0.5) * 36 - u * 70,
+          vy: -18 - Math.random() * 45,
           r: 1.5 + Math.random() * 3,
           life: 1,
         });
@@ -450,9 +465,9 @@ function flyAwayPaper(done) {
     fg.clearRect(0, 0, W, HH);
     for (let i = motes.length - 1; i >= 0; i--) {
       const m2 = motes[i];
-      m2.x += m2.vx / 60;
-      m2.y += m2.vy / 60;
-      m2.life -= 1 / 80;
+      m2.x += m2.vx * dt;
+      m2.y += m2.vy * dt;
+      m2.life -= dt * 0.75;
       if (m2.life <= 0) { motes.splice(i, 1); continue; }
       fg.globalAlpha = m2.life;
       const grad = fg.createRadialGradient(m2.x, m2.y, 0, m2.x, m2.y, m2.r * 3);
@@ -466,7 +481,6 @@ function flyAwayPaper(done) {
     fg.globalAlpha = 1;
 
     if (T < DUR || motes.length) {
-      if (T > 2.7) dim.style.background = 'rgba(3,24,15,0)';
       requestAnimationFrame(tick);
     } else {
       paper.remove();
@@ -476,6 +490,7 @@ function flyAwayPaper(done) {
       done();
     }
   });
+  const start_ = performance.now();
 }
 
 // ---------- send ----------
