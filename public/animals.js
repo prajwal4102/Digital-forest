@@ -299,6 +299,10 @@ export class Animal {
     this.body.object3D.visible = false;
     this.shadow.visible = false;
     this.introT = 0;
+    // A newborn shows its face, never its back: a three-quarter pose toward
+    // the camera (which lives at z=12.5 in the lab scene). The old heading
+    // pointed at the clearing centre, which from centre stage is dead away.
+    this.heading = Math.atan2(0 - this.pos.x, 12.5 - this.pos.y) + rand(-0.55, 0.55);
     window.dispatchEvent(new CustomEvent('creature-arrival', {
       detail: { x: this.pos.x, z: this.pos.y, phase: 'flight' },
     }));
@@ -472,6 +476,9 @@ export class Animal {
         this.shadow.visible = true;
         if (this.body.celebrate) this.body.celebrate();
       }
+      // face the audience from the very first visible frame, so the moment
+      // the intro ends there is no snap-around
+      if (!this.body.ownsFacing) o.rotation.y = this.heading;
       const kr = clamp((T - 4.95) / 0.9, 0, 1);
       const k = kr * kr * kr * (kr * (kr * 6 - 15) + 10); // smootherstep
       const back = 1 + 0.08 * Math.sin(k * Math.PI);
