@@ -544,6 +544,10 @@ export class Animal {
   // each animal out of its neighbours' space. Fliers and walkers ignore each
   // other — they are at different heights.
   separate(dt, herd) {
+    // The walker does the avoiding; whoever is standing holds their ground.
+    // Being shoved sideways with motionless legs reads as drifting on ice.
+    // The one exception is true body contact - then both ease apart.
+    const iAmMoving = this.state === 'wander' && this.speed > 0.15;
     let px = 0, pz = 0;
     for (const o of herd) {
       if (o === this || !!o.s.flying !== !!this.s.flying) continue;
@@ -556,11 +560,13 @@ export class Animal {
       const d2 = dx * dx + dz * dz;
       if (d2 > want * want) continue;
       const d = Math.sqrt(d2) || 0.001;
+      const touching = d < (this.s.radius + o.s.radius) * 1.05;
+      if (!iAmMoving && !touching) continue; // stand firm as others pass
       // deterministic tie-break, so two animals dead on top of each other
       // still part instead of jittering in place
       const ux = d2 < 1e-4 ? Math.cos(this.jitter) : dx / d;
       const uz = d2 < 1e-4 ? Math.sin(this.jitter) : dz / d;
-      const push = (want - d) / want;
+      const push = (want - d) / want * (iAmMoving ? 1 : 0.4);
       px += ux * push; pz += uz * push;
     }
     if (!px && !pz) return;
@@ -589,9 +595,9 @@ export class Animal {
     if (this.introT >= 0) { this.updateIntro(dt, t); return; }
     this.stateTime += dt;
 
-    // A drawn flower does not go anywhere. It just grows where it was put.
+    // A drawn flower does not go anywhere. It just grows where it was put -
+    // and nothing can shove it. Walkers avoid IT via their own separation.
     if (this.s.rooted) {
-      if (herd) this.separate(dt, herd);
       const gy0 = this.groundHeight(this.pos.x, this.pos.y);
       const o0 = this.body.object3D;
       o0.position.set(this.pos.x, gy0, this.pos.y);
