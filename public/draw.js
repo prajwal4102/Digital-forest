@@ -31,9 +31,10 @@ const KIND_NAMES = {
   prowler: 'Fox', stomper: 'Bull', hopper: 'Rabbit', slitherer: 'Snake',
   bird: 'Chicken', butterfly: 'Bee', dog: 'Dog', deer: 'Deer',
   stag: 'Stag', horse: 'Horse', plant: 'Flower',
+  toucan: 'Toucan', hawk: 'Hawk',
 };
 const KIND_ORDER = ['hopper', 'dog', 'prowler', 'deer', 'stag', 'horse',
-  'stomper', 'bird', 'slitherer', 'butterfly', 'plant'];
+  'stomper', 'bird', 'toucan', 'hawk', 'slitherer', 'butterfly', 'plant'];
 
 let templates = null;      // kind -> {img, mask, w, h}
 let tpl = null;            // the active template, or null for freehand

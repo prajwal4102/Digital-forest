@@ -139,6 +139,34 @@
   "rotY": 0,
   "walkRate": 1.0
  },
+ "toucan": {
+  "file": "toucan.glb",
+  "title": "Toucan",
+  "author": "Anonymous (Google Poly archive)",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/fFVqukPnc62",
+  "_note": "texture edited: black body lifted to grey so it can be coloured; eyes kept black",
+  "hide": [],
+  "hip": 0.2,
+  "rotY": 0,
+  "gait": "hop",
+  "hopK": 1.2,
+  "walkRate": 1.15
+ },
+ "hawk": {
+  "file": "hawk.glb",
+  "title": "Hawk",
+  "author": "Sherkiz",
+  "license": "CC-BY 3.0",
+  "source": "https://poly.pizza/m/RkN6MEbP6g",
+  "_note": "static mesh baked from the rigged original at Fly t=0.646 (rest pose was a crop-prone swoop); realistic texture: never weld/drop UVs",
+  "smooth": false,
+  "hide": [],
+  "hip": 0,
+  "rotY": 3.14159,
+  "gait": "flap",
+  "walkRate": 1.0
+ },
  "dog": {
   "file": "husky.glb",
   "title": "Husky",

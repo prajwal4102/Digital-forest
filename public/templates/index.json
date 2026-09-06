@@ -125,6 +125,34 @@
   },
   "title": "Horse"
  },
+ "toucan": {
+  "file": "toucan.png",
+  "mask": "toucan.mask.png",
+  "detail": "toucan.detail.png",
+  "w": 1706,
+  "h": 1024,
+  "box": {
+   "minZ": -0.833,
+   "maxZ": 0.833,
+   "minY": 0,
+   "maxY": 1
+  },
+  "title": "Toucan"
+ },
+ "hawk": {
+  "file": "hawk.png",
+  "mask": "hawk.mask.png",
+  "detail": "hawk.detail.png",
+  "w": 1464,
+  "h": 1024,
+  "box": {
+   "minZ": -0.6435,
+   "maxZ": 0.6435,
+   "minY": 0,
+   "maxY": 0.9
+  },
+  "title": "Hawk"
+ },
  "dog": {
   "file": "dog.png",
   "mask": "dog.mask.png",

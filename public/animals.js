@@ -86,6 +86,21 @@ export const SPECIES = {
     gait: 'fly', strideRate: 8, bobAmp: 0.09,
     states: busier(0.7), interestChance: 0.85 },
 
+  // big-beaked jungle percher: hops like a bird, poses like a star
+  toucan: { ...BASE, label: 'toucan',
+    height: 1.0, radius: 0.3, maxWidth: 2.0,
+    speed: { walk: 1.2, run: 2.6 }, turnRate: 4.0,
+    gait: 'hop', strideRate: 5.0, hopHeight: 0.12, wagFreq: 2.6,
+    states: busier(0.75), interestChance: 0.7 },
+
+  // a raptor on the wing: high, slow arcs over the clearing
+  hawk: { ...BASE, label: 'hawk',
+    height: 0.9, radius: 0.4, maxWidth: 2.4, rigged: false,
+    flying: true, hover: 2.4, hoverWobble: 0.5,
+    speed: { walk: 1.4, run: 2.8 }, turnRate: 1.8,
+    gait: 'fly', strideRate: 6, bobAmp: 0.07,
+    states: busier(1.1), interestChance: 0.5 },
+
   // graceful browsers
   deer: { ...BASE, label: 'deer',
     height: 1.7, radius: 0.42, maxWidth: 2.6,

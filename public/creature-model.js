@@ -346,7 +346,7 @@ export class ModelBody {
         if (this.current) this.current.reset().fadeIn(0.25).play();
       }
     });
-    this.play(this.resolve(['Idle', 'Flying_Idle', 'Snake_Idle']));
+    this.play(this.resolve(['Idle', 'Flying_Idle', 'Fly', 'Snake_Idle']));
 
     if (name) {
       this.label = makeNameLabel(name);
@@ -401,12 +401,12 @@ export class ModelBody {
   // which clip suits the mood — resolved against whatever this pack offers
   baseFor(state, moving, fast) {
     if (moving) {
-      if (fast) return this.resolve(['Run', 'Gallop', 'Fast_Flying', 'Walk', 'Snake_Walk']);
-      return this.resolve(['Walk', 'Snake_Walk', 'Fast_Flying', 'Run']);
+      if (fast) return this.resolve(['Run', 'Gallop', 'Fast_Flying', 'Fly', 'Walk', 'Snake_Walk']);
+      return this.resolve(['Walk', 'Snake_Walk', 'Fast_Flying', 'Fly', 'Run']);
     }
-    if (state === 'sniff') return this.resolve(['Duck', 'Idle_Headlow', 'Idle_2_HeadLow', 'Eating', 'Idle_Peck', 'Idle', 'Flying_Idle', 'Snake_Idle']);
-    if (state === 'look') return this.resolve(['Idle_2', 'Idle', 'Flying_Idle', 'Snake_Idle']);
-    return this.resolve(['Idle', 'Flying_Idle', 'Snake_Idle']);
+    if (state === 'sniff') return this.resolve(['Duck', 'Idle_Headlow', 'Idle_2_HeadLow', 'Eating', 'Idle_Peck', 'Idle', 'Flying_Idle', 'Fly', 'Snake_Idle']);
+    if (state === 'look') return this.resolve(['Idle_2', 'Idle', 'Flying_Idle', 'Fly', 'Snake_Idle']);
+    return this.resolve(['Idle', 'Flying_Idle', 'Fly', 'Snake_Idle']);
   }
 
   update(dt, ctx) {
