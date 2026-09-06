@@ -52,22 +52,29 @@ class Heap {
 export class ForestMap {
   constructor({
     cellSize = 0.4,
-    zMin = -9,
+    zMin = -9,        // back edge of the VISIBLE stage
     zMax = 8,
-    xCap = 10,
+    xCap = 10,        // widest the visible stage gets
     halfWidth,        // (z) => half the frame width in world units at that depth
     groundHeight,     // (x, z) => terrain height
     edgeMargin = 0.88, // keep this far inside the frame edge
+    worldRadius = 0,  // > 0: the jungle is a circle this big, and the screen
+    worldCz = -4,     //      shows only a chord of it (centre at x=0, z=worldCz)
   }) {
     this.cell = cellSize;
-    this.zMin = zMin;
+    this.stageZMin = zMin;
     this.zMax = zMax;
     this.xCap = xCap;
     this.halfWidth = halfWidth;
     this.groundHeight = groundHeight;
     this.edgeMargin = edgeMargin;
-    this.nx = Math.ceil((xCap * 2) / cellSize);
-    this.nz = Math.ceil((zMax - zMin) / cellSize);
+    this.worldRadius = worldRadius;
+    this.worldCz = worldCz;
+    // the grid covers the whole world; without a world circle it covers the stage
+    this.zMin = worldRadius > 0 ? Math.min(zMin, worldCz - worldRadius) : zMin;
+    this.xSpan = worldRadius > 0 ? Math.max(xCap, worldRadius) : xCap;
+    this.nx = Math.ceil((this.xSpan * 2) / cellSize);
+    this.nz = Math.ceil((zMax - this.zMin) / cellSize);
     this.grid = new Uint8Array(this.nx * this.nz);
     this.interests = [];
   }
@@ -76,13 +83,37 @@ export class ForestMap {
   at(ix, iz) { return this.grid[iz * this.nx + ix]; }
   set(ix, iz, v) { this.grid[iz * this.nx + ix] = v; }
   inBounds(ix, iz) { return ix >= 0 && iz >= 0 && ix < this.nx && iz < this.nz; }
-  cellX(ix) { return -this.xCap + (ix + 0.5) * this.cell; }
+  cellX(ix) { return -this.xSpan + (ix + 0.5) * this.cell; }
   cellZ(iz) { return this.zMin + (iz + 0.5) * this.cell; }
   toCell(x, z) {
     return [
-      Math.floor((x + this.xCap) / this.cell),
+      Math.floor((x + this.xSpan) / this.cell),
       Math.floor((z - this.zMin) / this.cell),
     ];
+  }
+
+  // ---------- stage vs. the hidden jungle ----------
+  // The audience sees a chord of the circle: this trapezoid. Everything else
+  // is real, walkable forest that just happens to be out of shot.
+  stageLim(z) { return Math.min(this.xCap, this.halfWidth(z) * this.edgeMargin); }
+  onStage(x, z, margin = 0) {
+    return z >= this.stageZMin - margin && z <= this.zMax
+      && Math.abs(x) <= this.stageLim(z) + margin;
+  }
+
+  // a random walkable spot the camera cannot see; `side` (+1/-1) prefers the
+  // wing on that x side (the deep back counts for either side)
+  randomHidden(side = 0) {
+    for (let tries = 0; tries < 80; tries++) {
+      const ix = Math.floor(Math.random() * this.nx);
+      const iz = Math.floor(Math.random() * this.nz);
+      if (this.at(ix, iz) === BLOCKED) continue;
+      const x = this.cellX(ix), z = this.cellZ(iz);
+      if (this.onStage(x, z, 1.2)) continue; // fully out of shot, with margin
+      if (side && !(x * side > 1.5 || z < this.stageZMin - 3)) continue;
+      return { x, z };
+    }
+    return null;
   }
 
   // ---------- construction ----------
@@ -92,14 +123,32 @@ export class ForestMap {
     this.grid.fill(OPEN);
     this.interests = [];
 
-    // Anything outside the visible frame is not walkable. Pull the limit in by
-    // the agent's own radius too — the frame narrows toward the camera, and an
-    // animal hugging that diagonal would otherwise be forever half outside it.
-    for (let iz = 0; iz < this.nz; iz++) {
-      const z = this.cellZ(iz);
-      const lim = Math.min(this.xCap, this.halfWidth(z) * this.edgeMargin) - agentRadius;
-      for (let ix = 0; ix < this.nx; ix++) {
-        if (Math.abs(this.cellX(ix)) > lim) this.set(ix, iz, BLOCKED);
+    if (this.worldRadius > 0) {
+      // The jungle is a circle; the screen shows a chord of it. Walkable is
+      // everything inside the circle up to the front chord (zMax) — an animal
+      // is free to stroll out of shot through the side trees and come back in
+      // from the other wing.
+      const R = this.worldRadius - agentRadius;
+      const R2 = R * R;
+      for (let iz = 0; iz < this.nz; iz++) {
+        const z = this.cellZ(iz);
+        const dz = z - this.worldCz;
+        for (let ix = 0; ix < this.nx; ix++) {
+          const x = this.cellX(ix);
+          if (x * x + dz * dz > R2) this.set(ix, iz, BLOCKED);
+        }
+      }
+    } else {
+      // No world circle: anything outside the visible frame is not walkable.
+      // Pull the limit in by the agent's own radius too — the frame narrows
+      // toward the camera, and an animal hugging that diagonal would otherwise
+      // be forever half outside it.
+      for (let iz = 0; iz < this.nz; iz++) {
+        const z = this.cellZ(iz);
+        const lim = this.stageLim(z) - agentRadius;
+        for (let ix = 0; ix < this.nx; ix++) {
+          if (Math.abs(this.cellX(ix)) > lim) this.set(ix, iz, BLOCKED);
+        }
       }
     }
 
@@ -111,6 +160,9 @@ export class ForestMap {
     for (const p of interests) {
       const anchor = this.nearestOpen(p.x, p.z, 8);
       if (!anchor) continue;
+      // an interest the camera cannot see would lure animals out of shot on
+      // ordinary errands; only excursions go there, and on purpose
+      if (this.worldRadius > 0 && !this.onStage(anchor.x, anchor.z, -0.2)) continue;
       this.stamp(p.x, p.z, p.r || 0.6, INTEREST, true);
       this.interests.push({ x: anchor.x, z: anchor.z, kind: p.kind || 'spot' });
     }
@@ -165,15 +217,17 @@ export class ForestMap {
     return null;
   }
 
-  // A random walkable spot. `bias` nudges the pick toward a preferred depth
-  // band so animals spend their time where they read well on screen.
+  // A random walkable spot ON STAGE — everyday wandering keeps the animals
+  // where the audience is. `bias` nudges the pick toward a preferred depth
+  // band so they spend their time where they read well on screen.
   randomOpen(bias) {
     let best = null, bestScore = -Infinity;
-    for (let tries = 0; tries < 40; tries++) {
+    for (let tries = 0; tries < 80; tries++) {
       const ix = Math.floor(Math.random() * this.nx);
       const iz = Math.floor(Math.random() * this.nz);
       if (this.at(ix, iz) === BLOCKED) continue;
       const x = this.cellX(ix), z = this.cellZ(iz);
+      if (!this.onStage(x, z, -0.3)) continue;
       if (!bias) return { x, z };
       const score = -Math.abs(z - bias.z) / bias.spread + Math.random() * 0.4;
       if (score > bestScore) { bestScore = score; best = { x, z }; }

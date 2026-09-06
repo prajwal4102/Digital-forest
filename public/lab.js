@@ -2002,6 +2002,10 @@ const forestMap = new ForestMap({
   halfWidth: xBound,
   groundHeight,
   edgeMargin: 0.86, // the animals keep clear of the framing foliage
+  // The screen is a chord of a much bigger jungle: a circle the animals can
+  // wander out into, off camera, and stroll back in from the other side.
+  worldRadius: 19,
+  worldCz: -4,
 });
 
 {

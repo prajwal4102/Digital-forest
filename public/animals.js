@@ -241,6 +241,15 @@ export class Animal {
     this.sinceCheck = 0;
     this.lastCheck = this.pos.clone();
     this.jitter = Math.random() * Math.PI * 2;
+    this.mgr = null; // set by the manager
+
+    // excursions into the unseen jungle: the screen is only a chord of the
+    // circle, and now and then an animal strolls off through the trees,
+    // roams the hidden side, and re-enters from the other wing
+    this.age = 0;
+    this.trip = null; // null | 'leaving' | 'crossing' | 'returning'
+    this.tripSide = 1;
+    this.exploreT = rand(50, 130);
 
     this.state = this.s.start || 'idle';
     this.stateTime = 0;
@@ -524,7 +533,79 @@ export class Animal {
     if (name === 'wander' && !this.path) this.chooseDestination();
   }
 
+  // ---------- excursions off camera ----------
+  // The visible screen is one chord of a circular jungle. Now and then an
+  // animal walks out through the side trees, roams the hidden arc, and comes
+  // back in from the other wing — so the forest reads as a place, not a stage.
+  maybeExplore(dt, herd) {
+    if (this.s.rooted || this.trip || !this.map.randomHidden || this.map.worldRadius <= 0) return;
+    this.age += dt;
+    if (this.age < 90) return; // a fresh arrival stays where its child can see it
+    this.exploreT -= dt;
+    if (this.exploreT > 0) return;
+    // the stage must never empty: only a couple roam at once, and only when
+    // enough of the herd stays in view (count anyone out of shot, not just
+    // deliberate travellers)
+    const away = herd ? herd.filter((a) =>
+      a.trip || !this.map.onStage(a.pos.x, a.pos.y, 0.6)).length : 0;
+    if (!herd || herd.length < 3 || away >= Math.min(2, herd.length - 2)) {
+      this.exploreT = rand(25, 45);
+      return;
+    }
+    const exitSide = this.pos.x >= 0 ? 1 : -1; // slip out the nearest wing
+    const dest = this.map.randomHidden(exitSide);
+    const path = dest && this.map.findPath({ x: this.pos.x, z: this.pos.y }, dest);
+    if (!path || path.length < 2) { this.exploreT = rand(30, 60); return; }
+    this.trip = 'leaving';
+    this.tripSide = exitSide;
+    this.path = path;
+    this.leg = 1;
+    this.enterState('wander');
+  }
+
+  // called when a trip leg's path has been fully walked
+  advanceTrip() {
+    if (this.trip === 'leaving') {
+      const hidden = !this.map.onStage(this.pos.x, this.pos.y, 0.5);
+      this.planTripLeg(hidden ? 'crossing' : 'returning');
+    } else if (this.trip === 'crossing') {
+      this.planTripLeg('returning');
+    } else { // the 'returning' leg is walked: home again
+      this.trip = null;
+      this.exploreT = rand(70, 160);
+      this.enterState('look'); // arrive, then take in the clearing
+    }
+  }
+
+  planTripLeg(phase) {
+    this.trip = phase;
+    let dest = null;
+    if (phase === 'crossing') {
+      dest = this.map.randomHidden(-this.tripSide);   // around the back, far wing
+    } else {
+      // back into the light — by preference through the wing opposite the exit,
+      // so the animal really does come in from the other end of the circle
+      for (let i = 0; i < 5 && !dest; i++) {
+        const cand = this.map.randomOpen({ z: 2.5, spread: 6 });
+        if (cand && (i === 4 || Math.sign(cand.x) === -this.tripSide)) dest = cand;
+      }
+    }
+    const path = dest && this.map.findPath({ x: this.pos.x, z: this.pos.y }, dest);
+    if (!path || path.length < 2) {
+      if (phase !== 'returning') return this.planTripLeg('returning');
+      // cannot even path home: give up the trip where we stand
+      this.trip = null;
+      this.exploreT = rand(60, 120);
+      return this.enterState('look');
+    }
+    this.path = path;
+    this.leg = 1;
+    this.enterState('wander');
+  }
+
   nextState() {
+    // a finished trip leg decides the next one before any mood table does
+    if (this.trip && !this.path) return this.advanceTrip();
     const table = this.s.states[this.state].next;
     let total = 0;
     for (const k in table) total += table[k];
@@ -595,6 +676,8 @@ export class Animal {
   // Wedged against the edge of the world. Turn back toward the open middle,
   // step off the boundary, and go somewhere else.
   unstick() {
+    // a wedged trip is a cancelled trip: come home the ordinary way
+    if (this.trip) { this.trip = null; this.exploreT = rand(60, 120); }
     const cx = 0, cz = 2.5;
     this.heading = Math.atan2(cx - this.pos.x, cz - this.pos.y);
     const safe = this.map.nearestOpen(
@@ -623,6 +706,8 @@ export class Animal {
       this.shadow.position.set(this.pos.x, gy0 + 0.03, this.pos.y);
       return;
     }
+
+    this.maybeExplore(dt, herd);
 
     const moving = this.state === 'wander' && this.path;
     let target = null;
@@ -741,7 +826,7 @@ export class AnimalManager {
     // A fresh sending transforms in the open middle where everyone can see;
     // restored creatures walk in from the back as before.
     const band = s.rooted ? { z: 1.5, spread: 4 }
-      : { z: this.map.zMin + 1.5, spread: 2.5 };
+      : { z: (this.map.stageZMin ?? this.map.zMin) + 1.5, spread: 2.5 };
     const centreStage = opts.intro && !s.rooted;
     let entry = null;
     for (let tries = 0; tries < 12; tries++) {
@@ -765,6 +850,7 @@ export class AnimalManager {
       intro: opts.intro || null,
     });
     a.id = opts.id;
+    a.mgr = this;
     this.animals.push(a);
     return a;
   }
