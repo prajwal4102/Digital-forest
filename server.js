@@ -11,6 +11,10 @@ const { WebSocketServer, WebSocket } = require('ws');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MAX_CREATURES = 40;
+// On the open internet, gate the operator's console: start the server with
+// ADMIN_PIN=xxxx and /admin will ask for it. Unset (the venue-LAN default),
+// everything behaves exactly as before.
+const ADMIN_PIN = process.env.ADMIN_PIN || '';
 
 // In-memory jungle state — survives wall refreshes during the event.
 let creatures = [];
@@ -95,6 +99,11 @@ wss.on('connection', (ws) => {
     switch (msg.type) {
       case 'hello':
         ws.role = msg.role === 'wall' ? 'wall' : msg.role === 'admin' ? 'admin' : 'draw';
+        if (ws.role === 'admin' && ADMIN_PIN && String(msg.pin || '') !== ADMIN_PIN) {
+          ws.role = 'draw'; // wrong or missing pin: no console for you
+          ws.send(JSON.stringify({ type: 'denied' }));
+          break;
+        }
         ws.send(JSON.stringify({ type: 'welcome', boot: BOOT }));
         if (ws.role === 'wall' || ws.role === 'admin') {
           ws.send(JSON.stringify({ type: 'init', creatures }));
@@ -129,6 +138,8 @@ wss.on('connection', (ws) => {
       }
 
       case 'clear':
+        // with a pin set (public internet), wiping the jungle is admin-only
+        if (ADMIN_PIN && ws.role !== 'admin') return;
         creatures = [];
         broadcast({ type: 'clear' }, ['wall', 'admin']);
         console.log('[jungle] cleared');

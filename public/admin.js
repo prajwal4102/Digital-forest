@@ -79,15 +79,29 @@ let bootSeen = null;
 function send(msg) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
+function adminPin(forceAsk) {
+  let pin = sessionStorage.getItem('dj-admin-pin');
+  if (pin === null || forceAsk) {
+    pin = prompt('Admin PIN (leave empty if none is set):') || '';
+    sessionStorage.setItem('dj-admin-pin', pin);
+  }
+  return pin;
+}
 function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
   ws.onopen = () => {
     connBadge.classList.remove('show');
-    ws.send(JSON.stringify({ type: 'hello', role: 'admin' }));
+    ws.send(JSON.stringify({ type: 'hello', role: 'admin', pin: adminPin(false) }));
   };
   ws.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.type === 'denied') {
+      sessionStorage.removeItem('dj-admin-pin');
+      alert('Wrong PIN.');
+      ws.close(); // reconnect will ask again
+      return;
+    }
     if (msg.type === 'welcome') {
       // the console holds no local state worth keeping: a restarted server
       // (new boot id) simply means reload for fresh code
