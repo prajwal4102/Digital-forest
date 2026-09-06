@@ -2141,6 +2141,13 @@ function addDrawing(data, live) {
       } else if (msg.type === 'creature') addDrawing(msg.creature, true);
       else if (msg.type === 'remove') animals.remove(msg.id);
       else if (msg.type === 'clear') animals.clear();
+      else if (msg.type === 'direct') {
+        // the operator's hand reaching into the jungle
+        const a = animals.animals.find((x) => x.id === msg.id);
+        if (!a) return;
+        if (msg.op === 'summon') a.summon();
+        else if (msg.op === 'emote') a.emote();
+      }
     };
     // never leave the wall dead for the rest of the event because the server
     // blinked: keep reaching back for it

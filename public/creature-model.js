@@ -393,9 +393,13 @@ export class ModelBody {
     this.current = a;
   }
 
-  // a joyful reaction on arrival: whatever this pack has that reads happy
+  // a joyful reaction on arrival: whatever this pack has that reads happy.
+  // Returns false when the pack has nothing — the caller can improvise.
   celebrate() {
-    this.play(this.resolve(['Yes', 'Wave', 'Dance', 'Idle_2', 'Jump']), true);
+    const nm = this.resolve(['Yes', 'Wave', 'Dance', 'Idle_2', 'Jump']);
+    if (!nm) return false;
+    this.play(nm, true);
+    return true;
   }
 
   // which clip suits the mood — resolved against whatever this pack offers

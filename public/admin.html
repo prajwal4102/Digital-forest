@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jungle Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    min-height: 100%;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(160deg, #0b4030, #145c40);
+    color: #eafff4;
+  }
+  #top {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 18px;
+    background: rgba(6, 40, 30, .92); backdrop-filter: blur(4px);
+  }
+  #top h1 { font-size: 1.25rem; margin-right: auto; }
+  #count { opacity: .8; font-size: .95rem; }
+  #clearBtn {
+    border: none; border-radius: 10px; padding: 10px 16px;
+    background: #a33; color: #fff; font-weight: 800; cursor: pointer;
+  }
+  #grid {
+    display: grid; gap: 14px; padding: 18px;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  }
+  .card {
+    background: #fff; color: #0b4030; border-radius: 16px;
+    padding: 10px; box-shadow: 0 6px 18px rgba(0,0,0,.3);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .thumbWrap {
+    height: 110px; display: flex; align-items: center; justify-content: center;
+    background: #f4f7f5; border-radius: 10px; overflow: hidden;
+  }
+  .thumbWrap img { max-width: 100%; max-height: 100%; }
+  .meta { display: flex; align-items: baseline; gap: 8px; }
+  .meta .nm { font-weight: 800; font-size: 1.05rem; }
+  .meta .kd { opacity: .65; font-size: .85rem; }
+  .meta .ago { margin-left: auto; opacity: .5; font-size: .78rem; }
+  .row { display: flex; gap: 6px; }
+  .row button {
+    flex: 1; border: none; border-radius: 9px; padding: 9px 4px;
+    font-weight: 700; font-size: .85rem; cursor: pointer;
+  }
+  .summon { background: #ffd75e; color: #4a3200; }
+  .emote  { background: #90e0c9; color: #0b4030; }
+  .del    { background: #f3d2d2; color: #7a1f1f; flex: 0 0 44px; }
+  .row button:active { transform: scale(.95); }
+  #empty { padding: 40px; text-align: center; opacity: .7; font-size: 1.1rem; }
+  #connBadge {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: #a33; color: #fff; font-size: .85rem; padding: 6px 14px;
+    border-radius: 999px; display: none; z-index: 40;
+  }
+  #connBadge.show { display: block; }
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>🛠️ Jungle Admin</h1>
+  <div id="count">…</div>
+  <button id="clearBtn">Clear the jungle</button>
+</div>
+<div id="grid"></div>
+<div id="empty" hidden>The jungle is empty — waiting for drawings.</div>
+<div id="connBadge">Reconnecting…</div>
+<script src="admin.js"></script>
+</body>
+</html>

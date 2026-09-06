@@ -250,6 +250,8 @@ export class Animal {
     this.trip = null; // null | 'leaving' | 'crossing' | 'returning'
     this.tripSide = 1;
     this.exploreT = rand(50, 130);
+    this.summoned = false; // the operator called: hurry to the front of stage
+    this.joyT = 0; // seconds left of the improvised joy-jump emote
 
     this.state = this.s.start || 'idle';
     this.stateTime = 0;
@@ -537,8 +539,48 @@ export class Animal {
   // The visible screen is one chord of a circular jungle. Now and then an
   // animal walks out through the side trees, roams the hidden arc, and comes
   // back in from the other wing — so the forest reads as a place, not a stage.
+  // ---------- the operator's call ----------
+  // Wherever it is — deep in the hidden jungle, mid-errand — the animal drops
+  // everything, hurries to the front of the stage, faces the audience and
+  // celebrates. How a "lost" animal is brought back into view.
+  summon() {
+    if (this.s.rooted || this.introT >= 0) return false;
+    this.trip = null;
+    this.exploreT = rand(70, 160);
+    for (let tries = 0; tries < 8; tries++) {
+      const spot = this.map.nearestOpen(rand(-2.2, 2.2), rand(4.0, 5.8));
+      if (!spot) continue;
+      const path = this.map.findPath({ x: this.pos.x, z: this.pos.y }, spot);
+      if (path && path.length >= 2) {
+        this.summoned = true;
+        this.path = path;
+        this.leg = 1;
+        this.enterState('wander');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  finishSummon() {
+    this.summoned = false;
+    // present yourself: a three-quarter pose toward the camera
+    this.heading = Math.atan2(-this.pos.x * 0.3, 12.5 - this.pos.y);
+    this.enterState('look');
+    this.emote();
+  }
+
+  // a joyful reaction on command: the body's own flourish when it has one,
+  // and an honest little double-jump when it does not
+  emote() {
+    if (this.introT >= 0 || this.s.rooted) return;
+    const did = this.body.celebrate ? this.body.celebrate() : false;
+    if (!did) this.joyT = 1.3;
+  }
+
   maybeExplore(dt, herd) {
-    if (this.s.rooted || this.trip || !this.map.randomHidden || this.map.worldRadius <= 0) return;
+    if (this.s.rooted || this.trip || this.summoned
+      || !this.map.randomHidden || this.map.worldRadius <= 0) return;
     this.age += dt;
     if (this.age < 90) return; // a fresh arrival stays where its child can see it
     this.exploreT -= dt;
@@ -604,6 +646,11 @@ export class Animal {
   }
 
   nextState() {
+    // a summons outranks every mood: keep walking until you get there
+    if (this.summoned) {
+      if (!this.path) return this.finishSummon();
+      return this.enterState('wander');
+    }
     // a finished trip leg decides the next one before any mood table does
     if (this.trip && !this.path) return this.advanceTrip();
     const table = this.s.states[this.state].next;
@@ -678,6 +725,7 @@ export class Animal {
   unstick() {
     // a wedged trip is a cancelled trip: come home the ordinary way
     if (this.trip) { this.trip = null; this.exploreT = rand(60, 120); }
+    this.summoned = false;
     const cx = 0, cz = 2.5;
     this.heading = Math.atan2(cx - this.pos.x, cz - this.pos.y);
     const safe = this.map.nearestOpen(
@@ -729,7 +777,9 @@ export class Animal {
       const turn = clamp(diff, -this.s.turnRate * dt, this.s.turnRate * dt);
       this.heading += turn;
       const facing = Math.max(0, Math.cos(diff));
-      wantSpeed = this.s.speed.walk * (0.25 + 0.75 * facing * facing);
+      // a summoned animal hurries; everyone else ambles
+      const base = this.summoned ? this.s.speed.run * 0.85 : this.s.speed.walk;
+      wantSpeed = base * (0.25 + 0.75 * facing * facing);
     }
     this.speed += (wantSpeed - this.speed) * Math.min(1, dt * 4);
 
@@ -771,9 +821,15 @@ export class Animal {
     const slopeF = (this.groundHeight(this.pos.x + Math.sin(this.heading) * e,
                                      this.pos.y + Math.cos(this.heading) * e) - gy) / e;
     if (!this.body.ownsFacing) o.rotation.z = 0;
+    // the improvised emote: two honest happy hops off the actual ground
+    let joy = 0;
+    if (this.joyT > 0) {
+      joy = Math.abs(Math.sin((1.3 - this.joyT) * Math.PI * 2 * 1.55)) * this.s.height * 0.16;
+      this.joyT = Math.max(0, this.joyT - dt);
+    }
     this.body.update(dt, {
       state: this.state, speed: this.speed, moving: this.speed > 0.15,
-      groundY: gy, t, slope: slopeF, heading: this.heading,
+      groundY: gy + joy, t, slope: slopeF, heading: this.heading,
     });
     // The terrain lean is the body's to apply, not ours. Mutating a rotation
     // the body also writes to means whichever of us assigns it last wins, and

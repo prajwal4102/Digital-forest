@@ -44,6 +44,7 @@ const server = http.createServer((req, res) => {
   if (urlPath === '/wall2d') urlPath = '/wall2d.html';
   if (urlPath === '/lab') urlPath = '/lab.html';
   if (urlPath === '/draw') urlPath = '/draw.html';
+  if (urlPath === '/admin') urlPath = '/admin.html';
 
   if (urlPath === '/info') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -74,10 +75,11 @@ const wss = new WebSocketServer({ server, maxPayload: 8 * 1024 * 1024 });
 // itself rather than running stale species tables for the rest of the event.
 const BOOT = String(Date.now());
 
-function broadcast(msg, role) {
+function broadcast(msg, roles) {
   const str = JSON.stringify(msg);
+  const want = roles ? (Array.isArray(roles) ? roles : [roles]) : null;
   for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN && (!role || client.role === role)) {
+    if (client.readyState === WebSocket.OPEN && (!want || want.includes(client.role))) {
       client.send(str);
     }
   }
@@ -92,9 +94,9 @@ wss.on('connection', (ws) => {
 
     switch (msg.type) {
       case 'hello':
-        ws.role = msg.role === 'wall' ? 'wall' : 'draw';
+        ws.role = msg.role === 'wall' ? 'wall' : msg.role === 'admin' ? 'admin' : 'draw';
         ws.send(JSON.stringify({ type: 'welcome', boot: BOOT }));
-        if (ws.role === 'wall') {
+        if (ws.role === 'wall' || ws.role === 'admin') {
           ws.send(JSON.stringify({ type: 'init', creatures }));
         }
         break;
@@ -115,11 +117,11 @@ wss.on('connection', (ws) => {
           born: Date.now(),
         };
         creatures.push(creature);
-        broadcast({ type: 'creature', creature }, 'wall');
+        broadcast({ type: 'creature', creature }, ['wall', 'admin']);
         // Keep the jungle from overcrowding — oldest creature wanders off.
         while (creatures.length > MAX_CREATURES) {
           const old = creatures.shift();
-          broadcast({ type: 'remove', id: old.id }, 'wall');
+          broadcast({ type: 'remove', id: old.id }, ['wall', 'admin']);
         }
         ws.send(JSON.stringify({ type: 'ack', id: creature.id, count: creatures.length }));
         console.log(`[jungle] +${creature.kind} "${creature.name || 'unnamed'}" (${creatures.length} alive)`);
@@ -128,9 +130,29 @@ wss.on('connection', (ws) => {
 
       case 'clear':
         creatures = [];
-        broadcast({ type: 'clear' }, 'wall');
+        broadcast({ type: 'clear' }, ['wall', 'admin']);
         console.log('[jungle] cleared');
         break;
+
+      // The operator's hand: delete a creature for good, or send the walls a
+      // direction ('summon' brings it to the front of the stage, 'emote' makes
+      // it do something joyful where it stands).
+      case 'admin': {
+        if (ws.role !== 'admin') return;
+        const id = Number(msg.id);
+        if (!Number.isFinite(id)) return;
+        if (msg.op === 'remove') {
+          const i = creatures.findIndex((c) => c.id === id);
+          if (i >= 0) {
+            const gone = creatures.splice(i, 1)[0];
+            broadcast({ type: 'remove', id }, ['wall', 'admin']);
+            console.log(`[jungle] admin removed ${gone.kind} "${gone.name || 'unnamed'}" (${creatures.length} alive)`);
+          }
+        } else if (msg.op === 'summon' || msg.op === 'emote') {
+          broadcast({ type: 'direct', op: msg.op, id }, 'wall');
+        }
+        break;
+      }
     }
   });
 });
