@@ -143,11 +143,11 @@
   "file": "hawk.png",
   "mask": "hawk.mask.png",
   "detail": "hawk.detail.png",
-  "w": 1464,
+  "w": 922,
   "h": 1024,
   "box": {
-   "minZ": -0.6435,
-   "maxZ": 0.6435,
+   "minZ": -0.4051,
+   "maxZ": 0.4051,
    "minY": 0,
    "maxY": 0.9
   },
