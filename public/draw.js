@@ -472,12 +472,39 @@ function exportCreature() {
 // ---------- websocket ----------
 let ws = null;
 let wsReady = false;
+// a served-restarted signal means this pad may be showing an outdated animal
+// list: reload for fresh code (but never mid-drawing, and never in a loop)
+let bootSeen = null;
+let staleCode = false;
+function checkBoot(boot) {
+  if (!boot) return;
+  if (bootSeen === null) { bootSeen = boot; return; }
+  if (boot !== bootSeen) { staleCode = true; tryReload(); }
+}
+function tryReload() {
+  if (!staleCode) return;
+  const last = Number(sessionStorage.getItem('dj-reload-at') || 0);
+  if (Date.now() - last < 20000) return; // never loop, whatever happens
+  // only between children (animal chooser on screen): never yank a page out
+  // of a child's hands mid-colouring
+  const chooserUp = document.getElementById('chooser').classList.contains('show');
+  if (!chooserUp || drawing || paperFlying) return;
+  sessionStorage.setItem('dj-reload-at', String(Date.now()));
+  location.reload();
+}
+setInterval(tryReload, 3000);
 function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
   ws.onopen = () => {
     wsReady = true;
     connBadge.classList.remove('show');
     ws.send(JSON.stringify({ type: 'hello', role: 'draw' }));
+  };
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'welcome') checkBoot(msg.boot);
+    } catch { /* not ours */ }
   };
   ws.onclose = () => {
     wsReady = false;

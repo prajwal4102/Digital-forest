@@ -69,6 +69,11 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server, maxPayload: 8 * 1024 * 1024 });
 
+// Stamped once per process: a page that reconnects and sees a different boot
+// id knows the server (and likely the code) changed under it, and reloads
+// itself rather than running stale species tables for the rest of the event.
+const BOOT = String(Date.now());
+
 function broadcast(msg, role) {
   const str = JSON.stringify(msg);
   for (const client of wss.clients) {
@@ -88,6 +93,7 @@ wss.on('connection', (ws) => {
     switch (msg.type) {
       case 'hello':
         ws.role = msg.role === 'wall' ? 'wall' : 'draw';
+        ws.send(JSON.stringify({ type: 'welcome', boot: BOOT }));
         if (ws.role === 'wall') {
           ws.send(JSON.stringify({ type: 'init', creatures }));
         }
