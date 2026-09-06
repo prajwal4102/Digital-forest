@@ -2048,8 +2048,21 @@ function addDrawing(data, live) {
   img.onload = async () => {
     let asset = null;
     if (!FLAT && !SCULPT && data.mode === 'color') {
-      try { asset = await getAsset(resolveSpecies(data.kind).label); }
+      // A coloured page belongs on the exact model it was drawn for. A kind
+      // this wall doesn't know resolves to the prowler fallback - which would
+      // dress the fox in a stranger's colours - and a kind with no model
+      // would become a made-up clay stand-in. Both are worse than showing
+      // nothing: skip anything that isn't precisely itself.
+      if (resolveSpecies(data.kind).label !== data.kind) {
+        console.warn('unknown coloured kind "' + data.kind + '" - not spawning');
+        return;
+      }
+      try { asset = await getAsset(data.kind); }
       catch { asset = null; }
+      if (!asset) {
+        console.warn('no model for coloured kind "' + data.kind + '" - not spawning');
+        return;
+      }
     }
     try {
       animals.spawn(data.kind, {
@@ -2074,22 +2087,6 @@ function addDrawing(data, live) {
 // old wall keeps working as a fallback during the event.
 {
   let ws = null, retry = 800;
-  // A long-lived wall can outlive the code it was built from: when the server
-  // restarts (new boot id), this page's species tables and models may be
-  // stale, and every unknown animal would fall back to the fox. Reload once
-  // and come back current. A plain network blip reconnects to the SAME boot
-  // id and changes nothing.
-  let bootSeen = null;
-  const checkBoot = (boot) => {
-    if (!boot) return;
-    if (bootSeen === null) { bootSeen = boot; return; }
-    if (boot === bootSeen) return;
-    const last = Number(sessionStorage.getItem('dj-reload-at') || 0);
-    if (Date.now() - last < 20000) return; // never loop, whatever happens
-    sessionStorage.setItem('dj-reload-at', String(Date.now()));
-    console.log('server restarted — reloading the wall for fresh code');
-    location.reload();
-  };
   const connect = () => {
     ws = new WebSocket((location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host);
     ws.onopen = () => {
@@ -2100,7 +2097,6 @@ function addDrawing(data, live) {
     ws.onmessage = (ev) => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
-      if (msg.type === 'welcome') { checkBoot(msg.boot); return; }
       if (msg.type === 'init') for (const c of msg.creatures) addDrawing(c, false);
       else if (msg.type === 'creature') addDrawing(msg.creature, true);
       else if (msg.type === 'remove') animals.remove(msg.id);
