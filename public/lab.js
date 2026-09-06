@@ -2047,9 +2047,18 @@ const animals = new AnimalManager({ scene, map: forestMap, groundHeight, max: 12
 const FLAT = location.hash.includes('flat');
 const SCULPT = location.hash.includes('sculpt');
 loadAnimalManifest();
+const pendingIds = new Set(); // ids decoding right now, so fast doubles can't slip in
 function addDrawing(data, live) {
+  // The relay replays its whole memory on every (re)connect, and a wall that
+  // sat through a network blip would happily adopt a second copy of every
+  // creature. One id, one animal, ever.
+  if (data.id != null) {
+    if (pendingIds.has(data.id) || animals.animals.some((a) => a.id === data.id)) return;
+    pendingIds.add(data.id);
+  }
   const img = new Image();
   img.onload = async () => {
+    pendingIds.delete(data.id);
     let asset = null;
     if (!FLAT && !SCULPT && data.mode === 'color') {
       // A coloured page belongs on the exact model it was drawn for. A kind
@@ -2082,7 +2091,10 @@ function addDrawing(data, live) {
       console.warn('could not bring drawing to life:', err);
     }
   };
-  img.onerror = () => console.warn('drawing failed to decode, id ' + data.id);
+  img.onerror = () => {
+    pendingIds.delete(data.id);
+    console.warn('drawing failed to decode, id ' + data.id);
+  };
   img.src = data.img;
 }
 
@@ -2118,8 +2130,15 @@ function addDrawing(data, live) {
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === 'welcome') { checkBoot(msg.boot); return; }
-      if (msg.type === 'init') for (const c of msg.creatures) addDrawing(c, false);
-      else if (msg.type === 'creature') addDrawing(msg.creature, true);
+      if (msg.type === 'init') {
+        // reconcile, don't append: drop any local creature the relay no
+        // longer remembers, then let the dedup in addDrawing skip the rest
+        const ids = new Set(msg.creatures.map((c) => c.id));
+        for (const a of [...animals.animals]) {
+          if (a.id != null && !ids.has(a.id)) animals.remove(a.id);
+        }
+        for (const c of msg.creatures) addDrawing(c, false);
+      } else if (msg.type === 'creature') addDrawing(msg.creature, true);
       else if (msg.type === 'remove') animals.remove(msg.id);
       else if (msg.type === 'clear') animals.clear();
     };
@@ -2150,7 +2169,7 @@ window.addEventListener('creature-arrival', (e) => {
 // console handle for tuning at the event, and a grey stand-in for testing
 // the navigation without needing a drawing: /lab#proxy
 window.forest = {
-  map: forestMap, animals,
+  map: forestMap, animals, camera, addDrawing,
   spawn: (kind) => animals.spawn(kind || 'hopper'),
 };
 if (location.hash.includes('proxy')) animals.spawn('hopper');
